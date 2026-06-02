@@ -116,7 +116,6 @@ const isEmpty = computed(() => !loading.value && data.value.length > 0 && totalI
     <header class="chart-head">
       <div class="title-block">
         <h2 class="title">Mehmonlar oqimi</h2>
-        <p class="subtitle">So‘nggi {{ days }} kun ichida qabul qilingan mehmonlar</p>
       </div>
       <div class="metrics">
         <div class="metric">

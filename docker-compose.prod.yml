@@ -20,6 +20,8 @@ x-py-service: &py-service
       condition: service_healthy
   networks: [private_net]
   restart: always
+  mem_limit: 96m
+  mem_reservation: 64m
 
 services:
   postgres:
@@ -28,6 +30,18 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=48MB"
+      - "-c"
+      - "max_connections=40"
+      - "-c"
+      - "work_mem=2MB"
+      - "-c"
+      - "maintenance_work_mem=16MB"
+      - "-c"
+      - "effective_cache_size=128MB"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -37,10 +51,21 @@ services:
       retries: 10
     networks: [private_net]
     restart: always
+    mem_limit: 128m
+    mem_reservation: 96m
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory"
+      - "32mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+      - "--save"
+      - ""
     volumes:
       - redis_data:/data
     healthcheck:
@@ -50,6 +75,8 @@ services:
       retries: 10
     networks: [private_net]
     restart: always
+    mem_limit: 48m
+    mem_reservation: 32m
 
   auth-service:
     <<: *py-service
@@ -105,6 +132,8 @@ services:
       - ws-gateway
     networks: [private_net, public_net]
     restart: always
+    mem_limit: 32m
+    mem_reservation: 16m
 
 networks:
   private_net:

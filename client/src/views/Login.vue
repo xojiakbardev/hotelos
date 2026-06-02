@@ -36,13 +36,7 @@ async function submit() {
 <template>
   <BlankLayout>
     <form class="card" @submit.prevent="submit" novalidate>
-      <div class="brand">
-        <span class="brand-mark">H</span>
-        <span class="brand-name">HotelOS</span>
-      </div>
-
       <h1 class="title">Tizimga kirish</h1>
-      <p class="subtitle">Xodimlar uchun boshqaruv paneli</p>
 
       <label class="field">
         <span>Telefon raqami</span>
@@ -73,10 +67,6 @@ async function submit() {
       <Button type="submit" variant="primary" size="lg" :loading="loading">
         {{ loading ? 'Kirilmoqda…' : 'Kirish' }}
       </Button>
-
-      <p class="hint">
-        Demo akkauntlar test maqsadida <code>.env</code> fayliga yozilgan.
-      </p>
     </form>
   </BlankLayout>
 </template>
@@ -95,43 +85,13 @@ async function submit() {
   gap: 16px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-.brand-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--primary);
-  color: white;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-family: var(--font-display);
-  box-shadow: var(--primary-shadow);
-}
-.brand-name {
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--ink-900);
-}
-
 .title {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.022em;
   color: var(--ink-900);
-  margin-top: 8px;
-}
-.subtitle {
-  margin: 0 0 12px 0;
-  color: var(--muted-fg);
-  font-size: var(--font-size-sm);
+  margin-bottom: 8px;
 }
 
 .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-size-sm); }
@@ -160,19 +120,5 @@ async function submit() {
   color: var(--danger);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
-}
-
-.hint {
-  margin: 8px 0 0 0;
-  text-align: center;
-  font-size: var(--font-size-xs);
-  color: var(--muted-fg);
-}
-code {
-  background: var(--bg-subtle);
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
-  font-family: var(--font-mono);
-  font-size: 0.92em;
 }
 </style>

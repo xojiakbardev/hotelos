@@ -51,10 +51,7 @@ async function completeEntry(entry: CleaningEntry) {
 
 <template>
   <div class="page">
-    <PageHeader
-      title="Tozalash navbati"
-      :description="`${store.pending.length} ta kutmoqda · ${store.inProgress.length} ta bajarilmoqda`"
-    />
+    <PageHeader title="Tozalash navbati" />
 
     <section v-if="store.error" class="error">{{ store.error }}</section>
     <section v-if="store.loading && !store.entries.length" class="empty card-paper">Navbat yuklanmoqda…</section>

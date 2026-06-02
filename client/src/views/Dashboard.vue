@@ -71,10 +71,7 @@ const openIssues     = computed(() => maintenance.open.length)
 
 <template>
   <div class="page">
-    <PageHeader
-      title="Boshqaruv paneli"
-      :description="`${greeting} — ${ROLE_UZ[auth.role || ''] || auth.role}.`"
-    />
+    <PageHeader title="Boshqaruv paneli" />
 
     <section class="stats">
       <StatCard
