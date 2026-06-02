@@ -184,5 +184,18 @@ jobs:
             docker system prune -af
             docker builder prune -af || true
 
-            docker compose --env-file .env -f docker-compose.prod.yml pull
+            # GHCR pulls occasionally drop mid-transfer ("connection reset
+            # by peer"). Retry the pull a few times before giving up.
+            for i in 1 2 3 4 5; do
+              echo "→ docker compose pull (attempt $i/5)"
+              if docker compose --env-file .env -f docker-compose.prod.yml pull; then
+                break
+              fi
+              if [ "$i" = "5" ]; then
+                echo "ERROR: pull failed after 5 attempts" >&2
+                exit 1
+              fi
+              sleep 10
+            done
+
             docker compose --env-file .env -f docker-compose.prod.yml up -d --remove-orphans
