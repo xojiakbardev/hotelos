@@ -1,0 +1,117 @@
+# Production stack — pulls pre-built images from GHCR (set by the deploy
+# workflow). One nginx serves the built Vue SPA *and* reverse-proxies the
+# six backend services + ws-gateway. Postgres + Redis sit on a private
+# network and are NEVER exposed to the host.
+#
+# Usage on the server (env vars come from ~/hotelos/.env):
+#   docker compose --env-file .env -f docker-compose.prod.yml up -d
+
+name: hotelos
+
+x-py-service: &py-service
+  env_file: .env
+  environment:
+    PYTHONUNBUFFERED: "1"
+    PYTHONDONTWRITEBYTECODE: "1"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks: [private_net]
+  restart: always
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [private_net]
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [private_net]
+    restart: always
+
+  auth-service:
+    <<: *py-service
+    image: ${IMAGE_PREFIX}-auth-service:latest
+    environment:
+      SERVICE_NAME: auth-service
+      SERVICE_SCHEMA: auth
+
+  reception-service:
+    <<: *py-service
+    image: ${IMAGE_PREFIX}-reception-service:latest
+    environment:
+      SERVICE_NAME: reception-service
+      SERVICE_SCHEMA: reception
+
+  housekeeping-service:
+    <<: *py-service
+    image: ${IMAGE_PREFIX}-housekeeping-service:latest
+    environment:
+      SERVICE_NAME: housekeeping-service
+      SERVICE_SCHEMA: housekeeping
+
+  room-service:
+    <<: *py-service
+    image: ${IMAGE_PREFIX}-room-service:latest
+    environment:
+      SERVICE_NAME: room-service
+      SERVICE_SCHEMA: room_service
+
+  maintenance-service:
+    <<: *py-service
+    image: ${IMAGE_PREFIX}-maintenance-service:latest
+    environment:
+      SERVICE_NAME: maintenance-service
+      SERVICE_SCHEMA: maintenance
+
+  ws-gateway:
+    <<: *py-service
+    image: ${IMAGE_PREFIX}-ws-gateway:latest
+    environment:
+      SERVICE_NAME: ws-gateway
+
+  nginx:
+    image: ${IMAGE_PREFIX}-nginx:latest
+    ports:
+      - "80:80"
+    depends_on:
+      - auth-service
+      - reception-service
+      - housekeeping-service
+      - room-service
+      - maintenance-service
+      - ws-gateway
+    networks: [private_net, public_net]
+    restart: always
+
+networks:
+  private_net:
+    driver: bridge
+  public_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

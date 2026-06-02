@@ -1,0 +1,159 @@
+name: Deploy
+
+# Production deploy. Runs when CI lands on main (or manually via the
+# Actions tab → workflow_dispatch).
+#
+# Required GitHub repository secrets:
+#   SERVER_HOST    — server IP or hostname
+#   SERVER_USER    — SSH user (must be in `docker` group)
+#   SERVER_SSH_KEY — private SSH key (PEM, single line or multi-line)
+#   SERVER_PORT    — SSH port (optional, defaults to 22)
+#
+# On first deploy, the workflow generates ~/hotelos/.env on the server
+# with strong random values for POSTGRES_PASSWORD and JWT_SECRET. That
+# file is REUSED on every subsequent deploy so existing user sessions
+# (signed with the JWT) stay valid.
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-push:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - { name: auth-service,         context: server/auth-service         }
+          - { name: reception-service,    context: server/reception-service    }
+          - { name: housekeeping-service, context: server/housekeeping-service }
+          - { name: room-service,         context: server/room-service         }
+          - { name: maintenance-service,  context: server/maintenance-service  }
+          - { name: ws-gateway,           context: server/ws-gateway           }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push ${{ matrix.service.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.service.context }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service.name }}:latest
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service.name }}:${{ github.sha }}
+
+  build-and-push-nginx:
+    name: Build & push nginx (SPA + reverse proxy)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build context = repo root because the multi-stage Dockerfile
+      # COPYs `client/` to build the Vue SPA and `nginx/` for configs.
+      - name: Build & push nginx image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: nginx/Dockerfile.prod
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-nginx:latest
+            ${{ env.IMAGE_PREFIX }}-nginx:${{ github.sha }}
+
+  deploy:
+    name: Deploy to server
+    runs-on: ubuntu-latest
+    needs: [build-and-push, build-and-push-nginx]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy compose file to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          source: "docker-compose.prod.yml"
+          target: "~/hotelos"
+
+      - name: Pull images and restart stack
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          envs: IMAGE_PREFIX
+          script: |
+            set -euo pipefail
+            cd ~/hotelos
+            echo "${{ secrets.GITHUB_TOKEN }}" | \
+              docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # First deploy → generate the production .env with strong secrets.
+            # The file is reused forever after; this is what keeps existing
+            # JWT sessions valid across redeploys.
+            if [ ! -f .env ]; then
+              umask 077
+              {
+                echo "IMAGE_PREFIX=${{ env.IMAGE_PREFIX }}"
+                echo "POSTGRES_USER=hotelos"
+                echo "POSTGRES_DB=hotelos"
+                echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+                echo "POSTGRES_HOST=postgres"
+                echo "POSTGRES_PORT=5432"
+                echo "REDIS_HOST=redis"
+                echo "REDIS_PORT=6379"
+                echo "JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n=' | head -c 64)"
+                echo "JWT_ALGORITHM=HS256"
+                echo "JWT_ACCESS_TOKEN_EXPIRE_MINUTES=480"
+                echo "SEED_MANAGER_PHONE=+998901111111"
+                echo "SEED_MANAGER_PASSWORD=$(openssl rand -hex 8)"
+                echo "SEED_RECEPTION_PHONE=+998902222222"
+                echo "SEED_RECEPTION_PASSWORD=$(openssl rand -hex 8)"
+                echo "SEED_TECHNICIAN_PHONE=+998903333333"
+                echo "SEED_TECHNICIAN_PASSWORD=$(openssl rand -hex 8)"
+                echo "SEED_CLEANER_PHONE=+998904444444"
+                echo "SEED_CLEANER_PASSWORD=$(openssl rand -hex 8)"
+              } > .env
+              echo "→ Generated ~/hotelos/.env (chmod 600). Copy seed passwords from here."
+            else
+              # Always keep IMAGE_PREFIX in sync with the current repo path.
+              if grep -q '^IMAGE_PREFIX=' .env; then
+                sed -i "s|^IMAGE_PREFIX=.*|IMAGE_PREFIX=${{ env.IMAGE_PREFIX }}|" .env
+              else
+                echo "IMAGE_PREFIX=${{ env.IMAGE_PREFIX }}" >> .env
+              fi
+            fi
+
+            docker compose --env-file .env -f docker-compose.prod.yml pull
+            docker compose --env-file .env -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f

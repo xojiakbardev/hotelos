@@ -1,0 +1,332 @@
+/* HotelOS — global design tokens.
+   Visual language: warm neutrals, blue primary, generous radius, soft layered shadows.
+   See design-system/hotelos-dashboard/MASTER.md and CLAUDE.md.
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* ---- Typography ---- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+  --font-mono: 'Inter', ui-monospace, monospace;
+
+  /* ---- Ink / grayscale ladder ---- */
+  --ink-900: #1a1a1a;
+  --ink-800: #262626;
+  --ink-700: #2e2e2e;
+  --ink-600: #4a4a4a;
+  --ink-500: #6b6b6b;
+  --ink-400: #8a8a8a;
+  --ink-300: #b5b5b5;
+  --ink-200: #c7c7c7;
+  --ink-100: #dcdcdc;
+  --ink-50:  #ededed;
+
+  /* ---- Surfaces ---- */
+  --bg:         #f7f6f4;
+  --bg-subtle:  #f0efed;
+  --surface:    #ffffff;
+  --border:     var(--ink-50);
+
+  /* ---- Primary (blue) ---- */
+  --primary:        #287dfc;
+  --primary-strong: #1d63d6;
+  --primary-soft-1: #f4f7ff;   /* very pale tint, for chip backgrounds */
+  --primary-soft-2: #d9e6ff;   /* peach-200 equivalent */
+  --primary-soft-3: #b8cfff;   /* peach-300 equivalent */
+
+  /* ---- Semantic ---- */
+  --success:      #37ba72;
+  --warn:         #ffce30;
+  --warn-ink:     #b27500;
+  --danger:       #fc4c3c;
+  --danger-soft:  #fec8c3;
+  --info:         #287dfc;
+  --purple:       #8b5cf6;
+
+  /* ---- Status accent (room/order/cleaning) ---- */
+  --status-clean:        var(--success);
+  --status-dirty:        var(--warn-ink);
+  --status-cleaning:     var(--primary);
+  --status-maintenance:  var(--danger);
+  --status-occupied:     var(--purple);
+
+  /* ---- Foreground roles ---- */
+  --foreground: var(--ink-800);
+  --muted-fg:   var(--ink-400);
+
+  /* ---- Radius ---- */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* ---- Spacing scale (8pt rhythm) ---- */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* ---- Elevation ---- */
+  --elev-1: 0 1px 2px rgba(18, 20, 24, 0.04);
+  --elev-2: 0 4px 16px -4px rgba(18, 20, 24, 0.08), 0 2px 6px rgba(18, 20, 24, 0.04);
+  --elev-3: 0 12px 32px -8px rgba(18, 20, 24, 0.12), 0 4px 12px rgba(18, 20, 24, 0.05);
+  --primary-shadow: 0 4px 14px -4px color-mix(in oklch, var(--primary) 50%, transparent);
+  --danger-shadow:  0 4px 14px -4px color-mix(in oklch, var(--danger) 50%, transparent);
+  --success-shadow: 0 4px 14px -4px color-mix(in oklch, var(--success) 50%, transparent);
+
+  /* ---- Type scale ---- */
+  --font-size-xs:   12px;
+  --font-size-sm:   13px;
+  --font-size-md:   15px;
+  --font-size-lg:   16px;
+  --font-size-xl:   18px;
+  --font-size-2xl:  22px;
+  --font-size-3xl:  32px;
+
+  /* ---- Motion ---- */
+  --motion-fast:  120ms;
+  --motion-base:  200ms;
+  --motion-slow:  320ms;
+  --motion-ease:  cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Layout ---- */
+  --sidebar-width:  264px;
+  --topbar-height:  64px;
+
+  /* ---- Z-index scale ---- */
+  --z-base:      0;
+  --z-elevated:  10;
+  --z-sticky:    20;
+  --z-overlay:   40;
+  --z-modal:    100;
+  --z-toast:   1000;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  color: var(--foreground);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.015em;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input, select, textarea {
+  font-family: inherit;
+}
+
+/* ---- Form controls (custom-styled, never browser default) ---- */
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  padding: 11px 14px;
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  transition: border-color var(--motion-fast) var(--motion-ease),
+              box-shadow var(--motion-fast) var(--motion-ease),
+              background var(--motion-fast) var(--motion-ease);
+}
+.input::placeholder,
+.textarea::placeholder { color: var(--ink-400); }
+
+.input:hover,
+.select:hover,
+.textarea:hover { border-color: color-mix(in oklch, var(--primary) 30%, var(--border)); }
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: color-mix(in oklch, var(--primary) 60%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent);
+}
+
+.input:disabled,
+.select:disabled,
+.textarea:disabled { opacity: 0.55; cursor: not-allowed; background: var(--bg-subtle); }
+
+.textarea { resize: vertical; min-height: 84px; }
+
+/* Custom-styled select with chevron — no browser default. */
+.select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b6b6b' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px 14px;
+  cursor: pointer;
+}
+.select::-ms-expand { display: none; }
+
+/* Field wrapper — vertical label + control + hint. */
+.field { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-size-sm); }
+.field > label,
+.field > span:first-child { font-weight: 500; color: var(--ink-700); }
+.field .hint { font-size: var(--font-size-xs); color: var(--muted-fg); margin-top: 2px; }
+.field .hint--ok   { color: var(--success); }
+.field .hint--warn { color: var(--warn-ink); }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-full);
+  background: color-mix(in oklch, var(--primary) 32%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ----------------------------------------------------------------
+   Utility classes — used by Vue components and views.
+   ---------------------------------------------------------------- */
+
+/* Card surface. Generous radius, soft layered shadow. */
+.card-paper {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1);
+  transition: box-shadow var(--motion-base) var(--motion-ease);
+}
+
+.elev-1 { box-shadow: var(--elev-1); }
+.elev-2 { box-shadow: var(--elev-2); }
+.elev-3 { box-shadow: var(--elev-3); }
+
+/* Soft glow card (used for prominent stat tiles). */
+.glow-card {
+  background: var(--surface);
+  border: 1px solid color-mix(in oklch, var(--primary) 12%, var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 3px rgba(18, 20, 24, 0.04),
+              0 0 0 1px color-mix(in oklch, var(--primary) 4%, transparent),
+              0 4px 20px -8px rgba(18, 20, 24, 0.06);
+  transition: box-shadow var(--motion-base) var(--motion-ease),
+              border-color var(--motion-base) var(--motion-ease);
+}
+.glow-card:hover {
+  border-color: color-mix(in oklch, var(--primary) 25%, var(--border));
+  box-shadow: 0 1px 3px rgba(18, 20, 24, 0.04),
+              0 0 0 1px color-mix(in oklch, var(--primary) 8%, transparent),
+              0 8px 28px -12px rgba(18, 20, 24, 0.1);
+}
+
+/* Pills — small rounded labels. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid color-mix(in oklch, var(--primary) 14%, transparent);
+}
+.pill-primary {
+  background: var(--primary-soft-2);
+  color: var(--primary-strong);
+}
+.pill-muted {
+  background: var(--bg-subtle);
+  color: var(--ink-500);
+  border-color: var(--border);
+}
+
+/* Soft-tinted icon chip — 40×40 tile for list-row markers. */
+.chip-soft {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--primary-soft-2);
+  color: var(--primary-strong);
+}
+
+/* Left accent bar — emphasises selected rows. */
+.rule-left {
+  position: relative;
+}
+.rule-left::before {
+  content: '';
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--primary);
+}
+
+/* Section divider — header with gradient line on the right. */
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--ink-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), transparent);
+}
+
+/* Typography helpers (small set used by views). */
+.text-caption  { font-size: var(--font-size-xs); line-height: 1.3; }
+.text-body-sm  { font-size: var(--font-size-sm); line-height: 1.5; }
+.text-body     { font-size: var(--font-size-md); line-height: 1.5; }
+.text-title    { font-size: var(--font-size-xl); line-height: 1.3; font-weight: 600; letter-spacing: -0.015em; }
+.text-title-lg { font-size: var(--font-size-2xl); line-height: 1.15; font-weight: 700; letter-spacing: -0.018em; }
+.text-display  { font-size: var(--font-size-3xl); line-height: 1.15; font-weight: 700; letter-spacing: -0.022em; }
+
+.text-muted  { color: var(--muted-fg); }
+.text-strong { color: var(--ink-900); font-weight: 600; }
+.tabular     { font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }

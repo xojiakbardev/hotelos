@@ -1,0 +1,27 @@
+"""Channel + event names that reception publishes or subscribes to.
+
+The same string is used both as the Redis channel name and as the `event`
+field inside the envelope — see `docs/events.md`. ws-gateway pattern-matches
+channels (e.g. `rooms.*`) to decide which connected clients receive what,
+so prefixes matter.
+"""
+
+from __future__ import annotations
+
+
+class Channels:
+    # Reception publishes these:
+    GUEST_CHECKED_IN = "guests.checked_in"
+    GUEST_CHECKED_OUT = "guests.checked_out"
+    ROOM_VACATED = "rooms.vacated"
+    BILL_FINALIZED = "bills.finalized"
+    ORDER_RECEIVED = "orders.received"
+    ORDER_PREPARING = "orders.preparing"
+    ORDER_DELIVERING = "orders.delivering"
+    ORDER_DELIVERED = "orders.delivered"
+
+    # Reception subscribes to these:
+    ROOM_CLEANING_STARTED = "rooms.cleaning_started"
+    ROOM_CLEANED = "rooms.cleaned"
+    MAINTENANCE_REPORTED = "maintenance.reported"
+    MAINTENANCE_RESOLVED = "maintenance.resolved"
