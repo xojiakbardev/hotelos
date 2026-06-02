@@ -33,3 +33,8 @@ client/*.log
 # --- Build artefacts ---
 *.zip
 *.tar.gz
+
+# Vite/vue-tsc build artifacts
+client/*.tsbuildinfo
+client/vite.config.d.ts
+client/vite.config.js
