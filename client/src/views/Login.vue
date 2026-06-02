@@ -20,13 +20,36 @@ async function submit() {
   error.value = null
   loading.value = true
   try {
-    await auth.login(phone.value, password.value)
+    await auth.login(phone.value.trim(), password.value)
     if (auth.token) ws.connect(auth.token)
     const next = (route.query.next as string) || '/'
     router.replace(next)
   } catch (e: unknown) {
-    const err = e as { response?: { data?: { message?: string } } }
-    error.value = err.response?.data?.message ?? 'Telefon yoki parol noto‘g‘ri'
+    const err = e as {
+      response?: {
+        data?: {
+          error?: string
+          message?: string
+          details?: { loc?: (string | number)[]; msg?: string; type?: string }[]
+        }
+      }
+    }
+    const data = err.response?.data
+    if (data?.error === 'validation_error' && data.details?.length) {
+      const first = data.details[0]
+      const field = first.loc?.[first.loc.length - 1]
+      if (field === 'phone') {
+        error.value = 'Telefon raqami noto‘g‘ri formatda. Masalan: +998901234567'
+      } else if (field === 'password') {
+        error.value = 'Parol kamida 6 ta belgidan iborat bo‘lishi kerak'
+      } else {
+        error.value = first.msg || 'Kiritilgan ma’lumotlar noto‘g‘ri'
+      }
+    } else if (data?.error === 'unauthenticated') {
+      error.value = 'Telefon yoki parol noto‘g‘ri'
+    } else {
+      error.value = data?.message ?? 'Tizimga kirishda xatolik yuz berdi'
+    }
   } finally {
     loading.value = false
   }
