@@ -154,6 +154,9 @@ jobs:
               fi
             fi
 
+            # Free up disk before pulling the new image set. The server is
+            # small (~6 GB) so we are aggressive here. Named volumes are
+            # untouched, so postgres / redis data survives.
+            docker system prune -af
             docker compose --env-file .env -f docker-compose.prod.yml pull
             docker compose --env-file .env -f docker-compose.prod.yml up -d --remove-orphans
-            docker image prune -f
