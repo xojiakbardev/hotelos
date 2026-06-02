@@ -50,14 +50,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Plain docker build + push wrapped in a retry — sporadic Docker Hub
+      # manifest timeouts (i/o timeout on registry-1.docker.io) have been
+      # killing this matrix; the retry pulls the base image up to 4 times
+      # before giving up.
       - name: Build & push ${{ matrix.service.name }}
-        uses: docker/build-push-action@v6
+        uses: nick-fields/retry@v3
+        env:
+          IMG: ${{ env.IMAGE_PREFIX }}-${{ matrix.service.name }}
+          SHA: ${{ github.sha }}
+          CTX: ${{ matrix.service.context }}
         with:
-          context: ${{ matrix.service.context }}
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.service.name }}:latest
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.service.name }}:${{ github.sha }}
+          max_attempts: 4
+          timeout_minutes: 15
+          retry_wait_seconds: 20
+          command: |
+            docker build -t "$IMG:latest" -t "$IMG:$SHA" "$CTX"
+            docker push "$IMG:latest"
+            docker push "$IMG:$SHA"
 
   build-and-push-nginx:
     name: Build & push nginx (SPA + reverse proxy)
@@ -78,14 +88,18 @@ jobs:
       # Build context = repo root because the multi-stage Dockerfile
       # COPYs `client/` to build the Vue SPA and `nginx/` for configs.
       - name: Build & push nginx image
-        uses: docker/build-push-action@v6
+        uses: nick-fields/retry@v3
+        env:
+          IMG: ${{ env.IMAGE_PREFIX }}-nginx
+          SHA: ${{ github.sha }}
         with:
-          context: .
-          file: nginx/Dockerfile.prod
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-nginx:latest
-            ${{ env.IMAGE_PREFIX }}-nginx:${{ github.sha }}
+          max_attempts: 4
+          timeout_minutes: 15
+          retry_wait_seconds: 20
+          command: |
+            docker build -f nginx/Dockerfile.prod -t "$IMG:latest" -t "$IMG:$SHA" .
+            docker push "$IMG:latest"
+            docker push "$IMG:$SHA"
 
   deploy:
     name: Deploy to server
@@ -103,6 +117,8 @@ jobs:
           port: ${{ secrets.SERVER_PORT || 22 }}
           source: "docker-compose.prod.yml"
           target: "~/hotelos"
+          timeout: 120s
+          command_timeout: 10m
 
       - name: Pull images and restart stack
         uses: appleboy/ssh-action@v1.2.0
@@ -111,6 +127,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
+          timeout: 120s
+          command_timeout: 15m
           envs: IMAGE_PREFIX
           script: |
             set -euo pipefail
