@@ -68,7 +68,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.service.name }}
-        run: docker build -t hotelos-${{ matrix.service.name }}:ci ${{ matrix.service.context }}
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 3
+          timeout_minutes: 15
+          retry_wait_seconds: 20
+          command: docker build -t hotelos-${{ matrix.service.name }}:ci ${{ matrix.service.context }}
 
   nginx:
     name: Nginx (SPA build + reverse proxy) image
@@ -77,4 +82,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build nginx image (multi-stage Vue build + nginx)
-        run: docker build -f nginx/Dockerfile.prod -t hotelos-nginx:ci .
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 3
+          timeout_minutes: 15
+          retry_wait_seconds: 20
+          command: docker build -f nginx/Dockerfile.prod -t hotelos-nginx:ci .

@@ -154,9 +154,17 @@ jobs:
               fi
             fi
 
-            # Free up disk before pulling the new image set. The server is
-            # small (~6 GB) so we are aggressive here. Named volumes are
-            # untouched, so postgres / redis data survives.
+            # The server is small (~6 GB disk). We must free space BEFORE
+            # pulling the new image set. Bring the stack down first so prune
+            # can actually reclaim the old image layers — running containers
+            # pin their images and stop prune from doing its job. Named
+            # volumes are untouched by `down`, so postgres / redis data
+            # survives. Short downtime is acceptable for this project.
+            if [ -f docker-compose.prod.yml ]; then
+              docker compose --env-file .env -f docker-compose.prod.yml down --remove-orphans || true
+            fi
             docker system prune -af
+            docker builder prune -af || true
+
             docker compose --env-file .env -f docker-compose.prod.yml pull
             docker compose --env-file .env -f docker-compose.prod.yml up -d --remove-orphans
