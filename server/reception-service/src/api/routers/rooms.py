@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 
 from src.api.dependencies import SessionDep, require_role
@@ -100,12 +100,12 @@ async def update_room(
     return snapshot
 
 
-@router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def delete_room(
     room_id: uuid.UUID,
     session: SessionDep,
     _=Depends(require_role(*MANAGER_ONLY)),
-) -> None:
+) -> Response:
     repo = RoomRepository(session)
     async with session.begin():
         room = await repo.get(room_id)
@@ -132,3 +132,4 @@ async def delete_room(
                     ),
                 },
             ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

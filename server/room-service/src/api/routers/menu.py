@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 
 from src.api.dependencies import SessionDep, require_role
@@ -113,15 +113,16 @@ async def set_availability(
     return snapshot
 
 
-@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def delete_menu_item(
     item_id: uuid.UUID,
     session: SessionDep,
     _=Depends(require_role(*CAN_EDIT)),
-) -> None:
+) -> Response:
     repo = MenuRepository(session)
     async with session.begin():
         item = await repo.get(item_id)
         if item is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="menu item not found")
         await repo.delete(item)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
