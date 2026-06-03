@@ -305,7 +305,7 @@ function onCheckInSuccess() {
       message="Mehmonlar tarixiga bog‘langan xonalar o‘chirib bo‘lmaydi."
       confirm-label="O‘chirish"
       cancel-label="Bekor qilish"
-      tone="danger"
+      tone="destructive"
       @cancel="toDelete = null"
       @confirm="confirmDelete"
     />

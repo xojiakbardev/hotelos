@@ -238,7 +238,7 @@ async function doCancel() {
       message="Bron bekor qilinsa, xona boshqa sana uchun bo‘shaydi."
       confirm-label="Bekor qilish"
       cancel-label="Yopish"
-      tone="danger"
+      tone="destructive"
       @cancel="toCancel = null"
       @confirm="doCancel"
     />

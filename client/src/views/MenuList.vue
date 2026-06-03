@@ -195,7 +195,7 @@ async function confirmDelete() {
       message="O‘chirilgan mahsulot avtomatik ravishda menyudan yo‘qoladi."
       confirm-label="O‘chirish"
       cancel-label="Bekor qilish"
-      tone="danger"
+      tone="destructive"
       @cancel="toDelete = null"
       @confirm="confirmDelete"
     />
