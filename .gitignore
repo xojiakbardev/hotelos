@@ -38,7 +38,3 @@ client/*.log
 client/*.tsbuildinfo
 client/vite.config.d.ts
 client/vite.config.js
-
-# --- Local Claude tooling (not part of project) ---
-.agent/
-.claude/
