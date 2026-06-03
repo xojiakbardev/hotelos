@@ -38,3 +38,6 @@ client/*.log
 client/*.tsbuildinfo
 client/vite.config.d.ts
 client/vite.config.js
+
+# Local Claude Code state (already-tracked files stay; new ones won't auto-add)
+.claude/scheduled_tasks.lock
