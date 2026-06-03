@@ -11,6 +11,8 @@ import { useHousekeepingStore } from '@/stores/housekeeping'
 import { useOrdersStore } from '@/stores/orders'
 import { useMaintenanceStore } from '@/stores/maintenance'
 import { useGuestsStore } from '@/stores/guests'
+import { metricsApi, type DashboardMetrics } from '@/api/metrics'
+import { ref } from 'vue'
 import { EVENT_UZ } from '@/lib/labels'
 
 const auth = useAuthStore()
@@ -21,6 +23,16 @@ const housekeeping = useHousekeepingStore()
 const orders = useOrdersStore()
 const maintenance = useMaintenanceStore()
 
+const metrics = ref<DashboardMetrics | null>(null)
+const canSeeRevenue = computed(() => auth.role === 'manager' || auth.role === 'reception')
+
+async function loadMetrics() {
+  if (!canSeeRevenue.value) return
+  try { metrics.value = await metricsApi.dashboard() } catch { /* dashboard tolerates a stale snapshot */ }
+}
+
+function money(minor: number) { return `$${(minor / 100).toFixed(2)}` }
+
 const ROLE_UZ: Record<string, string> = {
   manager: 'Boshqaruvchi',
   reception: 'Qabulchi',
@@ -30,6 +42,7 @@ const ROLE_UZ: Record<string, string> = {
 
 onMounted(() => {
   rooms.load()
+  loadMetrics()
   if (auth.role === 'manager' || auth.role === 'reception') {
     guests.load()
     orders.load()
@@ -53,6 +66,12 @@ watch(
     if (ch.startsWith('rooms.')) housekeeping.load()
     if (ch.startsWith('orders.')) orders.load()
     if (ch.startsWith('maintenance.')) maintenance.load()
+    if (
+      ch.startsWith('rooms.') ||
+      ch.startsWith('guests.') ||
+      ch.startsWith('orders.') ||
+      ch.startsWith('bills.')
+    ) loadMetrics()
   }
 )
 
@@ -72,6 +91,26 @@ const openIssues     = computed(() => maintenance.open.length)
 <template>
   <div class="page">
     <PageHeader title="Boshqaruv paneli" />
+
+    <section v-if="canSeeRevenue && metrics" class="stats">
+      <StatCard
+        label="Bandlik darajasi"
+        :value="`${(metrics.occupancy_rate * 100).toFixed(0)}%`"
+        :hint="`${metrics.rooms_occupied} / ${metrics.rooms_total} xona band`"
+        tone="primary"
+      />
+      <StatCard
+        label="Bugungi tushum"
+        :value="money(metrics.revenue_today_minor_units)"
+        hint="Yakunlangan hisoblar"
+        tone="success"
+      />
+      <StatCard
+        label="7 kunlik tushum"
+        :value="money(metrics.revenue_week_minor_units)"
+        hint="So‘nggi 7 kun"
+      />
+    </section>
 
     <section class="stats">
       <StatCard

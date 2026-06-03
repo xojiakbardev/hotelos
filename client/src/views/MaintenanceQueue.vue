@@ -36,6 +36,13 @@ const counts = computed(() => {
   return { critical: by('critical'), high: by('high'), normal: by('normal'), low: by('low'), mine: mine.value.length }
 })
 
+// All open + assigned critical tickets — drives the red banner.
+const criticalOpen = computed(() =>
+  [...unassigned.value, ...store.mine].filter(
+    (i) => i.urgency === 'critical' && i.status !== 'resolved'
+  )
+)
+
 async function claim(issue: Issue) {
   const before = { ...issue }
   const run = useOptimistic({
@@ -79,6 +86,16 @@ function onReported() {
         <Button v-if="canReport" variant="primary" size="md" @click="reportOpen = true">Muammo qayd etish</Button>
       </template>
     </PageHeader>
+
+    <section v-if="criticalOpen.length" class="critical-banner" role="alert">
+      <span class="critical-icon" aria-hidden="true">⚠</span>
+      <div class="critical-body">
+        <div class="critical-title">{{ criticalOpen.length }} ta KRITIK muammo darhol ko‘rib chiqishni talab qiladi</div>
+        <div class="critical-rooms">
+          <span v-for="i in criticalOpen" :key="i.id" class="critical-chip">#{{ i.room_number }}-xona</span>
+        </div>
+      </div>
+    </section>
 
     <section class="stats">
       <StatCard label="Kritik" :value="counts.critical" hint="Darhol kerak" tone="danger" />
@@ -201,5 +218,34 @@ function onReported() {
   max-width: 380px;
   color: var(--ink-700);
   line-height: 1.4;
+}
+
+.critical-banner {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 18px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  border-left: 4px solid var(--danger);
+  border-radius: var(--radius-md);
+  animation: critical-pulse 1.8s ease-in-out infinite;
+}
+.critical-icon { font-size: 22px; color: var(--danger); }
+.critical-title { font-weight: 700; color: var(--danger); font-size: var(--font-size-md); }
+.critical-rooms { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.critical-chip {
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+@keyframes critical-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 30%, transparent); }
+  50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--danger) 0%, transparent); }
 }
 </style>

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.models import Bill
@@ -43,3 +44,10 @@ class BillRepository:
     async def list_for_guest(self, guest_id: uuid.UUID) -> list[Bill]:
         stmt = select(Bill).where(Bill.guest_id == guest_id)
         return list((await self.session.execute(stmt)).scalars().all())
+
+    async def revenue_since(self, since: datetime) -> int:
+        """Sum of finalized bill totals from `since` onwards (minor units)."""
+        stmt = select(func.coalesce(func.sum(Bill.total_minor_units), 0)).where(
+            Bill.finalized_at >= since
+        )
+        return int((await self.session.execute(stmt)).scalar_one())

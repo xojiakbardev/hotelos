@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import PageHeader from '@/components/PageHeader.vue'
 import Button from '@/components/Button.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -29,6 +29,22 @@ const prefLabels: Record<string, string> = {
   afternoon: 'Tushdan keyin',
   evening: 'Kechqurun',
   custom: 'Maxsus vaqt'
+}
+
+// Live-updating "now" so the cleaning timer ticks once per second without
+// re-fetching the queue from the server.
+const now = ref(Date.now())
+let tickHandle: number | undefined
+onMounted(() => { tickHandle = window.setInterval(() => (now.value = Date.now()), 1000) })
+onUnmounted(() => { if (tickHandle !== undefined) window.clearInterval(tickHandle) })
+
+function elapsedSince(iso: string | null): string {
+  if (!iso) return '—'
+  const ms = Math.max(0, now.value - new Date(iso).getTime())
+  const totalSeconds = Math.floor(ms / 1000)
+  const m = Math.floor(totalSeconds / 60)
+  const s = totalSeconds % 60
+  return m > 0 ? `${m} daq ${s.toString().padStart(2, '0')} son` : `${s} son`
 }
 
 const canWork = computed(() => auth.role === 'manager' || auth.role === 'cleaner')
@@ -98,6 +114,7 @@ async function completeEntry(entry: CleaningEntry) {
             <span>{{ e.floor }}-qavat</span>
             <span v-if="e.started_at" class="text-muted text-caption">boshlandi {{ new Date(e.started_at).toLocaleTimeString('uz-UZ') }}</span>
           </div>
+          <div class="timer tabular">{{ elapsedSince(e.started_at) }}</div>
           <Button v-if="canWork" variant="success" size="sm" @click="completeEntry(e)">Toza deb belgilash</Button>
         </article>
       </div>
@@ -135,6 +152,17 @@ async function completeEntry(entry: CleaningEntry) {
 .head { display: flex; justify-content: space-between; align-items: center; }
 .room { font-family: var(--font-display); font-weight: 600; font-size: var(--font-size-md); }
 .meta { display: flex; justify-content: space-between; font-size: var(--font-size-xs); }
+.timer {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  color: var(--primary-strong);
+  background: var(--primary-soft-1, var(--bg-subtle));
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .dnd-flag {
   padding: 6px 10px;
   border-radius: var(--radius-sm);
