@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
 import Button from '@/components/Button.vue'
 import StatCard from '@/components/StatCard.vue'
@@ -18,6 +19,7 @@ const guests = useGuestsStore()
 const ws = useWsStore()
 const auth = useAuthStore()
 const toast = useToastStore()
+const router = useRouter()
 
 onMounted(() => guests.load())
 
@@ -176,7 +178,8 @@ function onCheckInSuccess() {
               </button>
               <span v-else>{{ g.do_not_disturb ? 'Bezovta qilmang' : '—' }}</span>
             </td>
-            <td v-if="canCheckOut" class="num">
+            <td v-if="canCheckOut" class="num actions">
+              <Button variant="ghost" size="sm" @click="router.push(`/guests/history/${encodeURIComponent(g.phone)}`)">Tarix</Button>
               <Button variant="outline" size="sm" @click="confirmGuest = g">Jo‘natish</Button>
             </td>
           </tr>
@@ -271,6 +274,7 @@ function onCheckInSuccess() {
   font-weight: 500;
 }
 .chip-btn:hover { background: var(--bg); }
+td.actions { display: flex; gap: 6px; justify-content: flex-end; }
 .chip-btn--on {
   background: color-mix(in srgb, var(--warning, #f59e0b) 18%, transparent);
   color: var(--warning, #b45309);

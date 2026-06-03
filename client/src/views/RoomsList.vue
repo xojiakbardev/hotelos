@@ -6,14 +6,89 @@ import StatCard from '@/components/StatCard.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import Modal from '@/components/Modal.vue'
 import CheckInForm from './CheckInForm.vue'
-import { type Room } from '@/api/reception'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { receptionApi, type Proximity, type Room, type RoomType } from '@/api/reception'
 import { useRoomsStore } from '@/stores/rooms'
 import { useWsStore } from '@/stores/ws'
 import { useAuthStore } from '@/stores/auth'
+import { useToastStore } from '@/stores/toast'
+import { parseApiError } from '@/composables/useOptimistic'
 
 const rooms = useRoomsStore()
 const ws = useWsStore()
 const auth = useAuthStore()
+const toast = useToastStore()
+
+const isManager = computed(() => auth.role === 'manager')
+
+const editor = ref<Room | 'new' | null>(null)
+const toDelete = ref<Room | null>(null)
+const saving = ref(false)
+
+const draft = ref({
+  room_number: 0,
+  floor: 1,
+  room_type: 'double' as RoomType,
+  proximity: 'elevator' as Proximity,
+  price_dollars: 50
+})
+
+function openEditor(target: Room | 'new') {
+  editor.value = target
+  if (target === 'new') {
+    draft.value = { room_number: 0, floor: 1, room_type: 'double', proximity: 'elevator', price_dollars: 50 }
+  } else {
+    draft.value = {
+      room_number: target.room_number,
+      floor: target.floor,
+      room_type: target.room_type,
+      proximity: target.proximity,
+      price_dollars: target.nightly_rate_minor_units / 100
+    }
+  }
+}
+
+async function saveDraft() {
+  if (!editor.value) return
+  saving.value = true
+  try {
+    const ratePayload = Math.round(draft.value.price_dollars * 100)
+    if (editor.value === 'new') {
+      await receptionApi.createRoom({
+        room_number: draft.value.room_number,
+        floor: draft.value.floor,
+        room_type: draft.value.room_type,
+        proximity: draft.value.proximity,
+        nightly_rate_minor_units: ratePayload
+      })
+      toast.success(`#${draft.value.room_number}-xona qo'shildi`)
+    } else {
+      await receptionApi.updateRoom(editor.value.id, {
+        floor: draft.value.floor,
+        room_type: draft.value.room_type,
+        proximity: draft.value.proximity,
+        nightly_rate_minor_units: ratePayload
+      })
+      toast.success(`Xona yangilandi`)
+    }
+    editor.value = null
+    await rooms.load()
+  } catch (e: unknown) {
+    toast.error(parseApiError(e))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function confirmDelete() {
+  if (!toDelete.value) return
+  try {
+    await receptionApi.deleteRoom(toDelete.value.id)
+    toast.info('Xona o‘chirildi')
+    await rooms.load()
+  } catch (e) { toast.error(parseApiError(e)) }
+  finally { toDelete.value = null }
+}
 
 const filterStatus = ref<string>('all')
 const filterType = ref<string>('all')
@@ -91,6 +166,7 @@ function onCheckInSuccess() {
   <div class="page">
     <PageHeader title="Xonalar">
       <template #actions>
+        <Button v-if="isManager" variant="ghost" size="md" @click="openEditor('new')">+ Xona qo‘shish</Button>
         <Button v-if="canCheckIn" variant="primary" size="md" @click="openTopButton">
           Mehmonni qabul qilish
         </Button>
@@ -161,6 +237,10 @@ function onCheckInSuccess() {
           </span>
           <span v-if="canCheckIn && isAssignable(r)" class="cta">Mehmon qabul qilish →</span>
         </footer>
+        <div v-if="isManager" class="admin-actions" @click.stop>
+          <Button variant="ghost" size="sm" @click="openEditor(r)">Tahrirlash</Button>
+          <Button variant="ghost" size="sm" @click="toDelete = r">O‘chirish</Button>
+        </div>
       </article>
     </div>
 
@@ -178,6 +258,57 @@ function onCheckInSuccess() {
         @success="onCheckInSuccess"
       />
     </Modal>
+
+    <Modal :open="editor !== null" :title="editor === 'new' ? 'Yangi xona' : 'Xonani tahrirlash'" size="md" @close="editor = null">
+      <form class="admin-form" @submit.prevent="saveDraft">
+        <label v-if="editor === 'new'" class="field">
+          <span>Xona raqami</span>
+          <input v-model.number="draft.room_number" class="input" type="number" min="1" max="9999" required />
+        </label>
+        <div class="row">
+          <label class="field"><span>Qavat</span>
+            <select v-model.number="draft.floor" class="select" required>
+              <option :value="1">1-qavat</option>
+              <option :value="2">2-qavat</option>
+            </select>
+          </label>
+          <label class="field"><span>Tunlik narx ($)</span>
+            <input v-model.number="draft.price_dollars" class="input" type="number" min="1" step="1" required />
+          </label>
+        </div>
+        <div class="row">
+          <label class="field"><span>Turi</span>
+            <select v-model="draft.room_type" class="select">
+              <option value="single">Bir kishilik</option>
+              <option value="double">Ikki kishilik</option>
+              <option value="suite">Lyuks</option>
+              <option value="accessible">Nogironlar uchun</option>
+            </select>
+          </label>
+          <label class="field"><span>Joylashuv</span>
+            <select v-model="draft.proximity" class="select">
+              <option value="elevator">Lift yonida</option>
+              <option value="stairs">Zinapoya yonida</option>
+            </select>
+          </label>
+        </div>
+        <div class="row-foot">
+          <Button variant="ghost" type="button" :disabled="saving" @click="editor = null">Bekor qilish</Button>
+          <Button type="submit" variant="primary" :loading="saving">Saqlash</Button>
+        </div>
+      </form>
+    </Modal>
+
+    <ConfirmDialog
+      :open="toDelete !== null"
+      :title="toDelete ? `#${toDelete.room_number}-xona o‘chirilsinmi?` : ''"
+      message="Mehmonlar tarixiga bog‘langan xonalar o‘chirib bo‘lmaydi."
+      confirm-label="O‘chirish"
+      cancel-label="Bekor qilish"
+      tone="danger"
+      @cancel="toDelete = null"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
@@ -270,4 +401,9 @@ function onCheckInSuccess() {
 .room--clickable:focus-visible .cta {
   opacity: 1;
 }
+
+.admin-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.admin-form { display: flex; flex-direction: column; gap: 12px; }
+.admin-form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.row-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 </style>

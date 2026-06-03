@@ -75,3 +75,26 @@ class RoomRepository:
         self.session.add(room)
         await self.session.flush()
         return room
+
+    async def update_fields(
+        self,
+        room: Room,
+        *,
+        floor: int | None = None,
+        room_type: str | None = None,
+        proximity: str | None = None,
+        nightly_rate_minor_units: int | None = None,
+    ) -> None:
+        if floor is not None:
+            room.floor = floor
+        if room_type is not None:
+            room.room_type = room_type
+        if proximity is not None:
+            room.proximity = proximity
+        if nightly_rate_minor_units is not None:
+            room.nightly_rate_minor_units = nightly_rate_minor_units
+        await self.session.flush()
+
+    async def delete(self, room: Room) -> None:
+        await self.session.delete(room)
+        await self.session.flush()

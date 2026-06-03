@@ -29,6 +29,12 @@ const routes: RouteRecordRaw[] = [
         meta: { roles: ['manager', 'reception'], title: 'Mehmonlar' }
       },
       {
+        path: 'guests/history/:phone',
+        name: 'guest-history',
+        component: () => import('@/views/GuestHistory.vue'),
+        meta: { roles: ['manager', 'reception'], title: 'Mehmon tarixi' }
+      },
+      {
         path: 'reservations',
         name: 'reservations',
         component: () => import('@/views/ReservationsList.vue'),

@@ -18,6 +18,8 @@ import math
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from urllib.parse import unquote
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.api.dependencies import PublisherDep, SessionDep, require_role
@@ -27,7 +29,9 @@ from src.api.schemas.guest import (
     CleaningPreferenceRequest,
     DailyCount,
     DNDRequest,
+    GuestHistoryOut,
     GuestOut,
+    StaySummary,
 )
 from src.domain.enums import Cleanliness, RoomStatus, UserRole
 from src.events.topics import Channels
@@ -90,6 +94,94 @@ async def list_active_guests(
         )
         for g in guests
     ]
+
+
+@router.get("/history/by-phone/{phone}", response_model=GuestHistoryOut)
+async def guest_history(
+    phone: str,
+    session: SessionDep,
+    _=Depends(require_role(*CAN_CHECK_IN)),
+) -> GuestHistoryOut:
+    """All historical stays + loyalty aggregate for a phone number.
+
+    Phone is used as the natural key because the system has no separate
+    guest registration step — each stay creates a fresh Guest row, but
+    repeat visitors call back on the same number.
+
+    Declared above `/{guest_id}` so FastAPI matches the literal prefix
+    first; otherwise "history" would try to validate as a UUID.
+    """
+    normalised = unquote(phone).strip()
+    stays = await GuestRepository(session).list_by_phone(normalised)
+    if not stays:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no stays for phone")
+
+    stay_rows: list[StaySummary] = []
+    total_nights = 0
+    total_spent = 0
+    for g in stays:
+        # A stay's "nights" comes from the finalized bill if available,
+        # otherwise falls back to elapsed days (still-active stay).
+        bill = g.bills[0] if g.bills else None
+        if bill is not None:
+            nights = bill.nights
+            total_spent += bill.total_minor_units
+        else:
+            elapsed = (
+                (g.checked_out_at or datetime.now(timezone.utc)) - g.checked_in_at
+            ).total_seconds() / 86400.0
+            nights = max(1, math.ceil(elapsed))
+        total_nights += nights
+        stay_rows.append(
+            StaySummary(
+                guest_id=str(g.id),
+                room_number=g.room.room_number,
+                floor=g.room.floor,
+                checked_in_at=g.checked_in_at,
+                checked_out_at=g.checked_out_at,
+                nights=nights,
+                total_minor_units=bill.total_minor_units if bill else None,
+                bill_id=str(bill.id) if bill else None,
+            )
+        )
+
+    newest = stays[0]
+    return GuestHistoryOut(
+        phone=normalised,
+        full_name=newest.full_name,
+        stays=stay_rows,
+        total_stays=len(stays),
+        total_nights=total_nights,
+        total_spent_minor_units=total_spent,
+        last_checked_in_at=newest.checked_in_at,
+        repeat_visitor=len(stays) > 1,
+    )
+
+
+@router.get("/{guest_id}", response_model=GuestOut)
+async def get_guest(
+    guest_id: uuid.UUID,
+    session: SessionDep,
+    _=Depends(require_role(*CAN_CHECK_IN)),
+) -> GuestOut:
+    guest = await GuestRepository(session).get(guest_id)
+    if guest is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="guest not found")
+    return GuestOut(
+        id=str(guest.id),
+        full_name=guest.full_name,
+        phone=guest.phone,
+        room_id=str(guest.room_id),
+        room_number=guest.room.room_number,
+        floor=guest.room.floor,
+        room_type=guest.room.room_type,
+        checked_in_at=guest.checked_in_at,
+        expected_checkout_at=guest.expected_checkout_at,
+        nightly_rate_locked_minor_units=guest.nightly_rate_locked_minor_units,
+        do_not_disturb=guest.do_not_disturb,
+        cleaning_preference=guest.cleaning_preference,
+        cleaning_preference_note=guest.cleaning_preference_note,
+    )
 
 
 @router.post("/check-in", response_model=GuestOut, status_code=status.HTTP_201_CREATED)

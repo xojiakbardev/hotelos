@@ -46,6 +46,32 @@ class CheckInRequest(BaseModel):
         return self
 
 
+class StaySummary(BaseModel):
+    """One historical stay for the guest history view."""
+
+    guest_id: str
+    room_number: int
+    floor: int
+    checked_in_at: datetime
+    checked_out_at: datetime | None
+    nights: int
+    total_minor_units: int | None = None  # null while still checked in
+    bill_id: str | None = None
+
+
+class GuestHistoryOut(BaseModel):
+    """Loyalty aggregate keyed by phone — covers all past stays."""
+
+    phone: str
+    full_name: str
+    stays: list[StaySummary]
+    total_stays: int
+    total_nights: int
+    total_spent_minor_units: int
+    last_checked_in_at: datetime | None
+    repeat_visitor: bool
+
+
 class DNDRequest(BaseModel):
     """Body for `PUT /guests/{id}/dnd`. Boolean wrapper kept explicit so the
     OpenAPI schema documents the toggle clearly."""

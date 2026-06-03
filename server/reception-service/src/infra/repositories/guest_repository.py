@@ -102,3 +102,18 @@ class GuestRepository:
         guest.cleaning_preference = preference
         guest.cleaning_preference_note = note
         await self.session.flush()
+
+    async def list_by_phone(self, phone: str) -> list[Guest]:
+        """All historical stays for a given phone number, newest first.
+
+        Each Guest row is a single stay, so "loyalty" is an aggregate over
+        the rows that share a phone. We use phone instead of a stable
+        guest_id because the system never asks for a separate registration.
+        """
+        stmt = (
+            select(Guest)
+            .options(selectinload(Guest.room), selectinload(Guest.bills))
+            .where(Guest.phone == phone)
+            .order_by(Guest.checked_in_at.desc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())

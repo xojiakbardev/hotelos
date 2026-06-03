@@ -99,8 +99,50 @@ export interface DailyCount {
   count: number
 }
 
+export interface StaySummary {
+  guest_id: string
+  room_number: number
+  floor: number
+  checked_in_at: string
+  checked_out_at: string | null
+  nights: number
+  total_minor_units: number | null
+  bill_id: string | null
+}
+
+export interface GuestHistory {
+  phone: string
+  full_name: string
+  stays: StaySummary[]
+  total_stays: number
+  total_nights: number
+  total_spent_minor_units: number
+  last_checked_in_at: string | null
+  repeat_visitor: boolean
+}
+
+export interface RoomCreatePayload {
+  room_number: number
+  floor: number
+  room_type: RoomType
+  proximity: Proximity
+  nightly_rate_minor_units: number
+}
+
+export type RoomUpdatePayload = Partial<{
+  floor: number
+  room_type: RoomType
+  proximity: Proximity
+  nightly_rate_minor_units: number
+}>
+
 export const receptionApi = {
   listRooms: () => api.get<{ rooms: Room[]; total: number }>('/reception/rooms').then((r) => r.data),
+  createRoom: (payload: RoomCreatePayload) =>
+    api.post<Room>('/reception/rooms', payload).then((r) => r.data),
+  updateRoom: (id: string, payload: RoomUpdatePayload) =>
+    api.put<Room>(`/reception/rooms/${id}`, payload).then((r) => r.data),
+  deleteRoom: (id: string) => api.delete(`/reception/rooms/${id}`).then(() => undefined),
   listGuests: () => api.get<Guest[]>('/reception/guests').then((r) => r.data),
   dailyGuestStats: (days = 30) =>
     api
@@ -110,6 +152,11 @@ export const receptionApi = {
     api.post<Guest>('/reception/guests/check-in', payload).then((r) => r.data),
   checkOut: (guestId: string) =>
     api.post<Bill>(`/reception/guests/${guestId}/check-out`).then((r) => r.data),
+  getGuest: (id: string) => api.get<Guest>(`/reception/guests/${id}`).then((r) => r.data),
+  guestHistory: (phone: string) =>
+    api
+      .get<GuestHistory>(`/reception/guests/history/by-phone/${encodeURIComponent(phone)}`)
+      .then((r) => r.data),
   setDnd: (guestId: string, value: boolean) =>
     api
       .put<Guest>(`/reception/guests/${guestId}/dnd`, { do_not_disturb: value })

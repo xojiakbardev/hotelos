@@ -38,3 +38,20 @@ class RoomList(BaseModel):
 
     rooms: list[RoomOut]
     total: int = Field(..., description="number of rooms returned")
+
+
+class RoomCreate(BaseModel):
+    room_number: int = Field(..., ge=1, le=9999)
+    floor: int = Field(..., ge=1, le=10)
+    room_type: RoomType
+    proximity: Proximity
+    nightly_rate_minor_units: int = Field(..., ge=1)
+
+
+class RoomUpdate(BaseModel):
+    """All fields optional — manager edits a single field at a time."""
+
+    floor: int | None = Field(default=None, ge=1, le=10)
+    room_type: RoomType | None = None
+    proximity: Proximity | None = None
+    nightly_rate_minor_units: int | None = Field(default=None, ge=1)
