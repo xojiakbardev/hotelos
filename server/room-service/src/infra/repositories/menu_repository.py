@@ -41,6 +41,10 @@ class MenuRepository:
         )
         self.session.add(item)
         await self.session.flush()
+        # Pull the server-defaulted timestamps back into the Python object so
+        # callers can serialize without triggering an async-unsafe lazy load
+        # of `created_at` / `updated_at` after the transaction commits.
+        await self.session.refresh(item)
         return item
 
     async def update(
@@ -64,6 +68,9 @@ class MenuRepository:
         if is_available is not None:
             item.is_available = is_available
         await self.session.flush()
+        # `updated_at` was bumped by the server-side onupdate trigger; refresh
+        # so the post-commit Pydantic serialization doesn't try to lazy-load it.
+        await self.session.refresh(item)
 
     async def delete(self, item: MenuItem) -> None:
         await self.session.delete(item)
