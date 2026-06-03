@@ -18,7 +18,8 @@ const NAV: NavItem[] = [
   { to: '/orders',        label: 'Xona xizmati',     roles: ['manager', 'reception'] },
   { to: '/housekeeping',  label: 'Tozalash',         roles: ['manager', 'cleaner'] },
   { to: '/maintenance',   label: 'Texnik xizmat',    roles: ['manager', 'technician', 'reception'] },
-  { to: '/staff',         label: 'Xodimlar',         roles: ['manager'] }
+  { to: '/staff',         label: 'Xodimlar',         roles: ['manager'] },
+  { to: '/menu',          label: 'Menyu',            roles: ['manager'] }
 ]
 
 const ROLE_UZ: Record<string, string> = {

@@ -11,7 +11,16 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Integer, SmallInteger, String, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Integer,
+    SmallInteger,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -22,6 +31,40 @@ SCHEMA = settings.service_schema
 
 class Base(DeclarativeBase):
     pass
+
+
+class MenuItem(Base):
+    """A single dish on the room-service menu.
+
+    Owned by room-service (the kitchen). Reception's order form reads this
+    catalogue via the public `/api/room-service/menu` path; the browser does
+    the cross-service call, not the reception backend.
+    """
+
+    __tablename__ = "menu_items"
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_menu_items_name"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False, default="other")
+    # Minor units so the order-side math has no floating-point drift.
+    price_minor_units: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    prep_minutes: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=10)
+    is_available: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true", default=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
 
 class OrderMirror(Base):

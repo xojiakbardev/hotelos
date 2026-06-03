@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.api.exceptions import install_handlers
+from src.api.routers import menu as menu_router
 from src.api.routers import orders as orders_router
 from src.core.broker import create_redis
 from src.core.config import settings
@@ -58,6 +59,7 @@ app = FastAPI(
 )
 install_handlers(app)
 app.include_router(orders_router.router)
+app.include_router(menu_router.router)
 
 
 @app.get("/health", tags=["meta"])

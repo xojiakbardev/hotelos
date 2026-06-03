@@ -51,6 +51,12 @@ const routes: RouteRecordRaw[] = [
         name: 'staff',
         component: () => import('@/views/StaffList.vue'),
         meta: { roles: ['manager'], title: 'Xodimlar' }
+      },
+      {
+        path: 'menu',
+        name: 'menu',
+        component: () => import('@/views/MenuList.vue'),
+        meta: { roles: ['manager'], title: 'Menyu' }
       }
     ]
   },
