@@ -7,13 +7,15 @@ guests. Other services see this state only through broker events.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     SmallInteger,
     String,
@@ -230,3 +232,62 @@ class Order(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class Reservation(Base):
+    """A future booking. Sits between "guest exists somewhere out there" and
+    "guest physically walked through the door".
+
+    Active reservations (PENDING + CONFIRMED) block the room for their date
+    range. Two concurrent reservation creates that target the same room with
+    overlapping dates serialise on the room row's FOR UPDATE lock — see
+    `services/reservation_assignment.py`.
+
+    Once checked in we create a Guest row and link `guest_id` so the bill
+    flow stays unified with walk-ins.
+    """
+
+    __tablename__ = "reservations"
+    __table_args__ = (
+        Index("ix_reservations_room_dates", "room_id", "check_in_date", "check_out_date"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Guest contact info — captured at reservation time. A Guest row gets
+    # created later, at check-in, so we can fall back to walk-in lookups.
+    full_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    passport_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA}.rooms.id"),
+        nullable=False,
+        index=True,
+    )
+    check_in_date: Mapped[date] = mapped_column(Date, nullable=False)
+    check_out_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    # Locked at reservation time so a later rate change doesn't surprise
+    # the guest at check-in.
+    nightly_rate_locked_minor_units: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Set when status flips to CHECKED_IN.
+    guest_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA}.guests.id"),
+        nullable=True,
+    )
+    status_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    room: Mapped[Room] = relationship()

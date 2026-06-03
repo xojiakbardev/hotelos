@@ -29,6 +29,12 @@ const routes: RouteRecordRaw[] = [
         meta: { roles: ['manager', 'reception'], title: 'Mehmonlar' }
       },
       {
+        path: 'reservations',
+        name: 'reservations',
+        component: () => import('@/views/ReservationsList.vue'),
+        meta: { roles: ['manager', 'reception'], title: 'Bronlar' }
+      },
+      {
         path: 'orders',
         name: 'orders',
         component: () => import('@/views/OrdersList.vue'),

@@ -62,6 +62,32 @@ class CleaningPreference(str, Enum):
     CUSTOM = "custom"
 
 
+class ReservationStatus(str, Enum):
+    """Future booking lifecycle.
+
+    A reservation begins PENDING (tentative). It can be:
+      * CONFIRMED — booking accepted, room is now blocked for the date range.
+      * CHECKED_IN — guest arrived; we create a Guest row and set this status.
+      * CANCELLED — voluntarily cancelled by the guest or reception.
+      * NO_SHOW — date passed without check-in.
+
+    The progression is one-way; once cancelled, no_show or checked_in, the
+    reservation is terminal and cannot be reopened.
+    """
+
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    CHECKED_IN = "checked_in"
+    CANCELLED = "cancelled"
+    NO_SHOW = "no_show"
+
+
+# Reservations that still hold the room (block overlapping dates).
+ACTIVE_RESERVATION_STATUSES: frozenset[str] = frozenset(
+    {ReservationStatus.PENDING.value, ReservationStatus.CONFIRMED.value}
+)
+
+
 class OrderStatus(str, Enum):
     """Room-service order lifecycle.
 

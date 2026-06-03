@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from src.api.exceptions import install_handlers
 from src.api.routers import guests as guests_router
 from src.api.routers import orders as orders_router
+from src.api.routers import reservations as reservations_router
 from src.api.routers import rooms as rooms_router
 from src.core.broker import create_redis
 from src.core.config import settings
@@ -69,6 +70,7 @@ install_handlers(app)
 app.include_router(rooms_router.router)
 app.include_router(guests_router.router)
 app.include_router(orders_router.router)
+app.include_router(reservations_router.router)
 
 
 @app.get("/health", tags=["meta"])

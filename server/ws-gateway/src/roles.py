@@ -11,8 +11,8 @@ from typing import Iterable
 
 # Channel patterns each role is allowed to receive.
 ROLE_CHANNELS: dict[str, list[str]] = {
-    "manager":   ["rooms.*", "guests.*", "orders.*", "bills.*", "maintenance.*", "housekeeping.*"],
-    "reception": ["rooms.*", "guests.*", "orders.*", "maintenance.*"],
+    "manager":   ["rooms.*", "guests.*", "orders.*", "bills.*", "maintenance.*", "housekeeping.*", "reservations.*"],
+    "reception": ["rooms.*", "guests.*", "orders.*", "maintenance.*", "reservations.*"],
     "technician": ["maintenance.*", "rooms.status"],
     "cleaner":    ["rooms.*", "housekeeping.*"],
 }

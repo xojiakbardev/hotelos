@@ -15,6 +15,7 @@ const NAV: NavItem[] = [
   { to: '/',              label: 'Boshqaruv paneli', roles: ['manager', 'reception', 'technician', 'cleaner'] },
   { to: '/rooms',         label: 'Xonalar',          roles: ['manager', 'reception', 'cleaner', 'technician'] },
   { to: '/guests',        label: 'Mehmonlar',        roles: ['manager', 'reception'] },
+  { to: '/reservations',  label: 'Bronlar',          roles: ['manager', 'reception'] },
   { to: '/orders',        label: 'Xona xizmati',     roles: ['manager', 'reception'] },
   { to: '/housekeeping',  label: 'Tozalash',         roles: ['manager', 'cleaner'] },
   { to: '/maintenance',   label: 'Texnik xizmat',    roles: ['manager', 'technician', 'reception'] },
