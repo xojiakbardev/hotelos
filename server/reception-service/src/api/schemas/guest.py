@@ -8,7 +8,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.domain.enums import Proximity, RoomType
+from src.domain.enums import CleaningPreference, Proximity, RoomType
 
 PHONE_REGEX = r"^\+?[1-9]\d{9,14}$"
 
@@ -36,12 +36,28 @@ class CheckInRequest(BaseModel):
     room_type: RoomType | None = None
     floor_preference: int | None = Field(default=None, ge=1, le=10)
     proximity_preference: Proximity | None = None
+    cleaning_preference: CleaningPreference = CleaningPreference.AFTERNOON
+    cleaning_preference_note: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
     def _require_target(self) -> Self:
         if self.room_id is None and self.room_type is None:
             raise ValueError("either room_id or room_type is required")
         return self
+
+
+class DNDRequest(BaseModel):
+    """Body for `PUT /guests/{id}/dnd`. Boolean wrapper kept explicit so the
+    OpenAPI schema documents the toggle clearly."""
+
+    do_not_disturb: bool
+
+
+class CleaningPreferenceRequest(BaseModel):
+    """Body for `PUT /guests/{id}/cleaning-preference`."""
+
+    cleaning_preference: CleaningPreference
+    cleaning_preference_note: str | None = Field(default=None, max_length=200)
 
 
 class DailyCount(BaseModel):
@@ -68,3 +84,6 @@ class GuestOut(BaseModel):
     checked_in_at: datetime
     expected_checkout_at: datetime
     nightly_rate_locked_minor_units: int
+    do_not_disturb: bool = False
+    cleaning_preference: CleaningPreference = CleaningPreference.AFTERNOON
+    cleaning_preference_note: str | None = None

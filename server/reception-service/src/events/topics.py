@@ -13,6 +13,8 @@ class Channels:
     # Reception publishes these:
     GUEST_CHECKED_IN = "guests.checked_in"
     GUEST_CHECKED_OUT = "guests.checked_out"
+    GUEST_DND_CHANGED = "guests.dnd_changed"
+    GUEST_PREFERENCES_CHANGED = "guests.preferences_changed"
     ROOM_VACATED = "rooms.vacated"
     BILL_FINALIZED = "bills.finalized"
     ORDER_RECEIVED = "orders.received"

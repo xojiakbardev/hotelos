@@ -52,3 +52,59 @@ def make_on_room_vacated(publisher: EventPublisher):
         )
 
     return on_room_vacated
+
+
+def make_on_guest_dnd_changed(publisher: EventPublisher):
+    async def on_guest_dnd_changed(envelope: dict) -> None:
+        """Mirror DND onto any active queue entry, then re-broadcast under
+        `housekeeping.*` so the cleaner UI patches its card live."""
+        payload = envelope.get("payload") or {}
+        raw_id = payload.get("room_id")
+        if not raw_id:
+            return
+        value = bool(payload.get("do_not_disturb", False))
+        room_id = uuid.UUID(raw_id)
+        async with async_session_factory() as session:
+            async with session.begin():
+                repo = CleaningQueueRepository(session)
+                updated = await repo.set_dnd_for_room(room_id, value)
+        if updated:
+            await publisher.publish(
+                channel=Channels.HOUSEKEEPING_ENTRY_UPDATED,
+                payload={
+                    "room_id": str(room_id),
+                    "room_number": payload.get("room_number"),
+                    "do_not_disturb": value,
+                },
+            )
+
+    return on_guest_dnd_changed
+
+
+def make_on_guest_preferences_changed(publisher: EventPublisher):
+    async def on_guest_preferences_changed(envelope: dict) -> None:
+        payload = envelope.get("payload") or {}
+        raw_id = payload.get("room_id")
+        if not raw_id:
+            return
+        preference = str(payload.get("cleaning_preference") or "afternoon")
+        note = payload.get("cleaning_preference_note")
+        room_id = uuid.UUID(raw_id)
+        async with async_session_factory() as session:
+            async with session.begin():
+                repo = CleaningQueueRepository(session)
+                updated = await repo.set_preference_for_room(
+                    room_id, preference=preference, note=note
+                )
+        if updated:
+            await publisher.publish(
+                channel=Channels.HOUSEKEEPING_ENTRY_UPDATED,
+                payload={
+                    "room_id": str(room_id),
+                    "room_number": payload.get("room_number"),
+                    "cleaning_preference": preference,
+                    "cleaning_preference_note": note,
+                },
+            )
+
+    return on_guest_preferences_changed

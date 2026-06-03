@@ -30,12 +30,26 @@ class OrderRepository:
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def list_delivered_for_guest(self, guest_id: uuid.UUID) -> list[Order]:
-        """Used by the billing algorithm to compute the room-service charges."""
+        """Used by the billing algorithm to compute the room-service charges.
+
+        Only returns orders that have NOT yet been rolled into a bill —
+        guards against double-charging on a retried check-out.
+        """
         stmt = select(Order).where(
             Order.guest_id == guest_id,
             Order.status == OrderStatus.DELIVERED.value,
+            Order.is_billed.is_(False),
         )
         return list((await self.session.execute(stmt)).scalars().all())
+
+    async def mark_billed(self, orders: list[Order]) -> None:
+        """Stamp the supplied orders as billed. Called inside the check-out
+        transaction so either every order is marked or none are."""
+        now = datetime.now(timezone.utc)
+        for order in orders:
+            order.is_billed = True
+            order.billed_at = now
+        await self.session.flush()
 
     async def list_for_guest(self, guest_id: uuid.UUID) -> list[Order]:
         stmt = (

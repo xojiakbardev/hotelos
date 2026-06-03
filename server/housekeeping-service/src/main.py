@@ -12,7 +12,11 @@ from src.api.routers import queue as queue_router
 from src.core.broker import create_redis
 from src.core.config import settings
 from src.core.db import engine
-from src.events.handlers import make_on_room_vacated
+from src.events.handlers import (
+    make_on_guest_dnd_changed,
+    make_on_guest_preferences_changed,
+    make_on_room_vacated,
+)
 from src.events.publisher import EventPublisher
 from src.events.subscriber import EventSubscriber
 from src.events.topics import Channels
@@ -33,6 +37,14 @@ async def lifespan(app: FastAPI):
     enqueue = make_on_room_vacated(app.state.publisher)
     subscriber.on(Channels.ROOM_VACATED, enqueue)
     subscriber.on(Channels.MAINTENANCE_RESOLVED, enqueue)
+    subscriber.on(
+        Channels.GUEST_DND_CHANGED,
+        make_on_guest_dnd_changed(app.state.publisher),
+    )
+    subscriber.on(
+        Channels.GUEST_PREFERENCES_CHANGED,
+        make_on_guest_preferences_changed(app.state.publisher),
+    )
     await subscriber.start()
     app.state.subscriber = subscriber
 

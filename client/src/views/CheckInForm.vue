@@ -15,6 +15,7 @@ import { computed, ref } from 'vue'
 import Button from '@/components/Button.vue'
 import {
   receptionApi,
+  type CleaningPreference,
   type Guest,
   type Proximity,
   type Room,
@@ -48,7 +49,9 @@ const form = ref({
   room_type: (props.room?.room_type ?? 'double') as RoomType,
   nights: 1,
   floor_preference: '' as '' | '1' | '2',
-  proximity_preference: '' as '' | Proximity
+  proximity_preference: '' as '' | Proximity,
+  cleaning_preference: 'afternoon' as CleaningPreference,
+  cleaning_preference_note: ''
 })
 
 const submitting = ref(false)
@@ -62,6 +65,7 @@ async function submit() {
   errorDetail.value = null
   submitting.value = true
   try {
+    const noteValue = form.value.cleaning_preference_note.trim() || undefined
     const result = await receptionApi.checkIn(
       isDirect.value
         ? {
@@ -69,7 +73,9 @@ async function submit() {
             phone: form.value.phone.trim(),
             passport_number: form.value.passport_number.trim() || undefined,
             nights: form.value.nights,
-            room_id: props.room!.id
+            room_id: props.room!.id,
+            cleaning_preference: form.value.cleaning_preference,
+            cleaning_preference_note: noteValue
           }
         : {
             full_name: form.value.full_name.trim(),
@@ -80,7 +86,9 @@ async function submit() {
             floor_preference: form.value.floor_preference
               ? Number(form.value.floor_preference)
               : undefined,
-            proximity_preference: form.value.proximity_preference || undefined
+            proximity_preference: form.value.proximity_preference || undefined,
+            cleaning_preference: form.value.cleaning_preference,
+            cleaning_preference_note: noteValue
           }
     )
     toast.success(`#${result.room_number}-xona ${result.full_name} ga tayinlandi`)
@@ -149,6 +157,23 @@ async function submit() {
       <label class="field" :class="{ full: isDirect }">
         <span>Tunlar soni</span>
         <input v-model.number="form.nights" class="input" type="number" min="1" max="365" required />
+      </label>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Tozalash afzalligi</legend>
+      <label class="field">
+        <span>Vaqt</span>
+        <select v-model="form.cleaning_preference" class="select">
+          <option value="morning">Ertalab</option>
+          <option value="afternoon">Tushdan keyin</option>
+          <option value="evening">Kechqurun</option>
+          <option value="custom">Maxsus</option>
+        </select>
+      </label>
+      <label class="field" v-if="form.cleaning_preference === 'custom'">
+        <span>Izoh</span>
+        <input v-model="form.cleaning_preference_note" class="input" type="text" maxlength="200" placeholder="masalan: 10:30 sharp" />
       </label>
     </fieldset>
 

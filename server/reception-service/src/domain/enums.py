@@ -48,6 +48,20 @@ class RoomStatus(str, Enum):
     OUT_OF_SERVICE = "out_of_service"
 
 
+class CleaningPreference(str, Enum):
+    """When the guest prefers to be cleaned (set at check-in, updatable mid-stay).
+
+    `CUSTOM` means the receptionist agreed a specific window with the guest
+    and recorded it as a free-text note alongside; the enum tells housekeeping
+    "ask reception before knocking".
+    """
+
+    MORNING = "morning"
+    AFTERNOON = "afternoon"
+    EVENING = "evening"
+    CUSTOM = "custom"
+
+
 class OrderStatus(str, Enum):
     """Room-service order lifecycle.
 

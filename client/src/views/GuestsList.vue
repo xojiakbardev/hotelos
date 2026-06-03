@@ -34,6 +34,42 @@ const canCheckOut = computed(() => auth.role === 'manager' || auth.role === 'rec
 const confirmGuest = ref<Guest | null>(null)
 const checkInOpen = ref(false)
 
+const PREF_LABELS: Record<string, string> = {
+  morning: 'Ertalab',
+  afternoon: 'Tushdan keyin',
+  evening: 'Kechqurun',
+  custom: 'Maxsus'
+}
+
+async function toggleDnd(g: Guest) {
+  const target = !g.do_not_disturb
+  const before = g.do_not_disturb
+  g.do_not_disturb = target
+  try {
+    const updated = await receptionApi.setDnd(g.id, target)
+    Object.assign(g, updated)
+    toast.info(target ? `#${g.room_number}: bezovta qilmang yoqildi` : `#${g.room_number}: bezovta qilmang o‘chirildi`)
+  } catch (e) {
+    g.do_not_disturb = before
+    toast.error(`Xato: ${parseApiError(e)}`)
+  }
+}
+
+async function cyclePreference(g: Guest) {
+  const order: Array<Guest['cleaning_preference']> = ['morning', 'afternoon', 'evening', 'custom']
+  const idx = order.indexOf(g.cleaning_preference)
+  const next = order[(idx + 1) % order.length]
+  const before = g.cleaning_preference
+  g.cleaning_preference = next
+  try {
+    const updated = await receptionApi.setCleaningPreference(g.id, next, g.cleaning_preference_note)
+    Object.assign(g, updated)
+  } catch (e) {
+    g.cleaning_preference = before
+    toast.error(`Xato: ${parseApiError(e)}`)
+  }
+}
+
 const totalRevenuePotential = computed(() =>
   guests.guests.reduce((s, g) => s + g.nightly_rate_locked_minor_units, 0)
 )
@@ -103,6 +139,8 @@ function onCheckInSuccess() {
             <th>Qabul qilindi</th>
             <th class="num">Tunlar</th>
             <th class="num">Tunlik narx</th>
+            <th>Tozalash</th>
+            <th>DND</th>
             <th v-if="canCheckOut" class="num">Harakat</th>
           </tr>
         </thead>
@@ -120,6 +158,24 @@ function onCheckInSuccess() {
             <td class="text-muted">{{ new Date(g.checked_in_at).toLocaleString('uz-UZ') }}</td>
             <td class="num mono tabular">{{ nightsSoFar(g) }}</td>
             <td class="num mono tabular">{{ money(g.nightly_rate_locked_minor_units) }}</td>
+            <td>
+              <button v-if="canCheckOut" type="button" class="chip-btn" @click="cyclePreference(g)" :title="g.cleaning_preference_note || 'Bosing — keyingisini tanlash'">
+                {{ PREF_LABELS[g.cleaning_preference] || g.cleaning_preference }}
+              </button>
+              <span v-else>{{ PREF_LABELS[g.cleaning_preference] || g.cleaning_preference }}</span>
+            </td>
+            <td>
+              <button
+                v-if="canCheckOut"
+                type="button"
+                class="chip-btn"
+                :class="{ 'chip-btn--on': g.do_not_disturb }"
+                @click="toggleDnd(g)"
+              >
+                {{ g.do_not_disturb ? 'Yoqilgan' : 'O‘chiq' }}
+              </button>
+              <span v-else>{{ g.do_not_disturb ? 'Bezovta qilmang' : '—' }}</span>
+            </td>
             <td v-if="canCheckOut" class="num">
               <Button variant="outline" size="sm" @click="confirmGuest = g">Jo‘natish</Button>
             </td>
@@ -205,4 +261,19 @@ function onCheckInSuccess() {
   flex-shrink: 0;
 }
 .name { font-weight: 500; color: var(--ink-900); }
+.chip-btn {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+}
+.chip-btn:hover { background: var(--bg); }
+.chip-btn--on {
+  background: color-mix(in srgb, var(--warning, #f59e0b) 18%, transparent);
+  color: var(--warning, #b45309);
+  border-color: color-mix(in srgb, var(--warning, #f59e0b) 35%, var(--border));
+}
 </style>

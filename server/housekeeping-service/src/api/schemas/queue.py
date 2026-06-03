@@ -22,3 +22,6 @@ class CleaningEntryOut(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     assigned_cleaner_id: uuid.UUID | None = None
+    do_not_disturb: bool = False
+    cleaning_preference: str = "afternoon"
+    cleaning_preference_note: str | None = None

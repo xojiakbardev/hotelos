@@ -11,6 +11,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -102,6 +103,18 @@ class Guest(Base):
     # Locked at check-in so a later rate change can't retroactively alter
     # the bill. Computed billing reads this column, not the room's current rate.
     nightly_rate_locked_minor_units: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Cleaner-facing "do not disturb" toggle. The cleaning queue surfaces this
+    # so staff knock politely / skip the room as configured.
+    do_not_disturb: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    # When the guest prefers cleaning to happen. Free-text note paired with
+    # the enum lets reception capture a "10:30 sharp" style request when the
+    # caller chose CUSTOM.
+    cleaning_preference: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="afternoon", default="afternoon"
+    )
+    cleaning_preference_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -193,6 +206,13 @@ class Order(Base):
     items: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)
     total_minor_units: Mapped[int] = mapped_column(BigInteger, nullable=False)
     taken_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # Flipped to True the moment the guest's bill includes this order.
+    # The check-out billing query filters on `is_billed=False` so a retried
+    # check-out can never double-charge an already-billed order.
+    is_billed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    billed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

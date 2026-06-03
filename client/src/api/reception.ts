@@ -18,6 +18,8 @@ export interface Room {
   last_assigned_at: string | null
 }
 
+export type CleaningPreference = 'morning' | 'afternoon' | 'evening' | 'custom'
+
 export interface CheckInPayload {
   full_name: string
   phone: string
@@ -28,6 +30,8 @@ export interface CheckInPayload {
   room_type?: RoomType
   floor_preference?: number
   proximity_preference?: Proximity
+  cleaning_preference?: CleaningPreference
+  cleaning_preference_note?: string
 }
 
 export interface Guest {
@@ -41,6 +45,9 @@ export interface Guest {
   checked_in_at: string
   expected_checkout_at: string
   nightly_rate_locked_minor_units: number
+  do_not_disturb: boolean
+  cleaning_preference: CleaningPreference
+  cleaning_preference_note: string | null
 }
 
 export interface Bill {
@@ -103,6 +110,21 @@ export const receptionApi = {
     api.post<Guest>('/reception/guests/check-in', payload).then((r) => r.data),
   checkOut: (guestId: string) =>
     api.post<Bill>(`/reception/guests/${guestId}/check-out`).then((r) => r.data),
+  setDnd: (guestId: string, value: boolean) =>
+    api
+      .put<Guest>(`/reception/guests/${guestId}/dnd`, { do_not_disturb: value })
+      .then((r) => r.data),
+  setCleaningPreference: (
+    guestId: string,
+    preference: CleaningPreference,
+    note?: string | null
+  ) =>
+    api
+      .put<Guest>(`/reception/guests/${guestId}/cleaning-preference`, {
+        cleaning_preference: preference,
+        cleaning_preference_note: note ?? null
+      })
+      .then((r) => r.data),
   listOrders: () => api.get<Order[]>('/reception/orders').then((r) => r.data),
   createOrder: (payload: OrderCreate) =>
     api.post<Order>('/reception/orders', payload).then((r) => r.data),

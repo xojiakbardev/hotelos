@@ -65,3 +65,25 @@ class CleaningQueueRepository:
         entry.status = CleaningStatus.COMPLETED.value
         entry.completed_at = datetime.now(timezone.utc)
         await self.session.flush()
+
+    async def set_dnd_for_room(self, room_id: uuid.UUID, value: bool) -> bool:
+        """Update DND on the *active* queue entry for a room (if any).
+        Returns True if a row was updated. No-op if the room isn't in the
+        queue right now — a future enqueue will start with default False."""
+        entry = await self.find_active_for_room(room_id)
+        if entry is None:
+            return False
+        entry.do_not_disturb = value
+        await self.session.flush()
+        return True
+
+    async def set_preference_for_room(
+        self, room_id: uuid.UUID, *, preference: str, note: str | None
+    ) -> bool:
+        entry = await self.find_active_for_room(room_id)
+        if entry is None:
+            return False
+        entry.cleaning_preference = preference
+        entry.cleaning_preference_note = note
+        await self.session.flush()
+        return True

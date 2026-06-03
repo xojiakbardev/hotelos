@@ -17,8 +17,19 @@ onMounted(() => store.load())
 
 watch(
   () => ws.lastEvent,
-  (env) => { if (env?.channel?.startsWith('rooms.')) store.load() }
+  (env) => {
+    const ch = env?.channel
+    if (!ch) return
+    if (ch.startsWith('rooms.') || ch.startsWith('housekeeping.')) store.load()
+  }
 )
+
+const prefLabels: Record<string, string> = {
+  morning: 'Ertalab',
+  afternoon: 'Tushdan keyin',
+  evening: 'Kechqurun',
+  custom: 'Maxsus vaqt'
+}
 
 const canWork = computed(() => auth.role === 'manager' || auth.role === 'cleaner')
 
@@ -69,7 +80,9 @@ async function completeEntry(entry: CleaningEntry) {
             <span>{{ e.floor }}-qavat</span>
             <span class="text-muted text-caption">navbatga qo‘shildi {{ new Date(e.queued_at).toLocaleTimeString('uz-UZ') }}</span>
           </div>
-          <Button v-if="canWork" variant="primary" size="sm" @click="startEntry(e)">Tozalashni boshlash</Button>
+          <div v-if="e.do_not_disturb" class="dnd-flag" title="Mehmon bezovta qilmang rejimini yoqgan">⚠ Bezovta qilmang</div>
+          <div class="text-muted text-caption">Afzal vaqt: {{ prefLabels[e.cleaning_preference] || e.cleaning_preference }}<span v-if="e.cleaning_preference_note"> — “{{ e.cleaning_preference_note }}”</span></div>
+          <Button v-if="canWork" variant="primary" size="sm" @click="startEntry(e)" :disabled="e.do_not_disturb">Tozalashni boshlash</Button>
         </article>
       </div>
 
@@ -122,4 +135,12 @@ async function completeEntry(entry: CleaningEntry) {
 .head { display: flex; justify-content: space-between; align-items: center; }
 .room { font-family: var(--font-display); font-weight: 600; font-size: var(--font-size-md); }
 .meta { display: flex; justify-content: space-between; font-size: var(--font-size-xs); }
+.dnd-flag {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warning, #f59e0b) 14%, transparent);
+  color: var(--warning, #b45309);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
 </style>

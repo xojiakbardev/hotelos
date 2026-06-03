@@ -71,6 +71,8 @@ class GuestRepository:
         room_id: uuid.UUID,
         expected_checkout_at: datetime,
         nightly_rate_locked_minor_units: int,
+        cleaning_preference: str = "afternoon",
+        cleaning_preference_note: str | None = None,
     ) -> Guest:
         guest = Guest(
             full_name=full_name,
@@ -79,7 +81,24 @@ class GuestRepository:
             room_id=room_id,
             expected_checkout_at=expected_checkout_at,
             nightly_rate_locked_minor_units=nightly_rate_locked_minor_units,
+            cleaning_preference=cleaning_preference,
+            cleaning_preference_note=cleaning_preference_note,
         )
         self.session.add(guest)
         await self.session.flush()
         return guest
+
+    async def set_dnd(self, guest: Guest, value: bool) -> None:
+        guest.do_not_disturb = value
+        await self.session.flush()
+
+    async def set_cleaning_preference(
+        self,
+        guest: Guest,
+        *,
+        preference: str,
+        note: str | None,
+    ) -> None:
+        guest.cleaning_preference = preference
+        guest.cleaning_preference_note = note
+        await self.session.flush()

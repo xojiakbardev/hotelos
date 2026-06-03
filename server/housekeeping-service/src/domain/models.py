@@ -14,7 +14,15 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, SmallInteger, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Integer,
+    SmallInteger,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -57,6 +65,17 @@ class CleaningQueueEntry(Base):
     assigned_cleaner_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )
+    # Snapshot of the in-room guest's DND + preference at enqueue time, kept
+    # up-to-date by `guests.dnd_changed` / `guests.preferences_changed`
+    # subscribers. Cleaners read these on the queue card so they know to
+    # skip / knock politely / wait for the agreed window.
+    do_not_disturb: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    cleaning_preference: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="afternoon", default="afternoon"
+    )
+    cleaning_preference_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

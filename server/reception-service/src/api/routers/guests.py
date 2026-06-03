@@ -22,7 +22,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.api.dependencies import PublisherDep, SessionDep, require_role
 from src.api.schemas.billing import CheckOutResponse
-from src.api.schemas.guest import CheckInRequest, DailyCount, GuestOut
+from src.api.schemas.guest import (
+    CheckInRequest,
+    CleaningPreferenceRequest,
+    DailyCount,
+    DNDRequest,
+    GuestOut,
+)
 from src.domain.enums import Cleanliness, RoomStatus, UserRole
 from src.events.topics import Channels
 from src.infra.repositories.bill_repository import BillRepository
@@ -78,6 +84,9 @@ async def list_active_guests(
             checked_in_at=g.checked_in_at,
             expected_checkout_at=g.expected_checkout_at,
             nightly_rate_locked_minor_units=g.nightly_rate_locked_minor_units,
+            do_not_disturb=g.do_not_disturb,
+            cleaning_preference=g.cleaning_preference,
+            cleaning_preference_note=g.cleaning_preference_note,
         )
         for g in guests
     ]
@@ -137,6 +146,8 @@ async def check_in(
                 room_id=room.id,
                 expected_checkout_at=expected_checkout,
                 nightly_rate_locked_minor_units=room.nightly_rate_minor_units,
+                cleaning_preference=payload.cleaning_preference.value,
+                cleaning_preference_note=payload.cleaning_preference_note,
             )
             # Snapshot values before the session closes — lazy attribute
             # access after commit triggers IO on an expired instance.
@@ -147,6 +158,9 @@ async def check_in(
             room_type = room.room_type
             checked_in_at = guest.checked_in_at
             rate = guest.nightly_rate_locked_minor_units
+            dnd = guest.do_not_disturb
+            cleaning_pref = guest.cleaning_preference
+            cleaning_pref_note = guest.cleaning_preference_note
     except NoRoomsAvailable as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -181,7 +195,111 @@ async def check_in(
         checked_in_at=checked_in_at,
         expected_checkout_at=expected_checkout,
         nightly_rate_locked_minor_units=rate,
+        do_not_disturb=dnd,
+        cleaning_preference=cleaning_pref,
+        cleaning_preference_note=cleaning_pref_note,
     )
+
+
+@router.put("/{guest_id}/dnd", response_model=GuestOut)
+async def set_do_not_disturb(
+    guest_id: uuid.UUID,
+    payload: DNDRequest,
+    session: SessionDep,
+    publisher: PublisherDep,
+    _=Depends(require_role(*CAN_CHECK_IN)),
+) -> GuestOut:
+    """Toggle the guest's DND flag. Only valid for guests who are still
+    checked in — flipping it on a checked-out guest is a no-op error."""
+    repo = GuestRepository(session)
+    async with session.begin():
+        guest = await repo.get(guest_id)
+        if guest is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="guest not found")
+        if guest.checked_out_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "not_checked_in", "message": "guest already checked out"},
+            )
+        await repo.set_dnd(guest, payload.do_not_disturb)
+        snapshot = GuestOut(
+            id=str(guest.id),
+            full_name=guest.full_name,
+            phone=guest.phone,
+            room_id=str(guest.room_id),
+            room_number=guest.room.room_number,
+            floor=guest.room.floor,
+            room_type=guest.room.room_type,
+            checked_in_at=guest.checked_in_at,
+            expected_checkout_at=guest.expected_checkout_at,
+            nightly_rate_locked_minor_units=guest.nightly_rate_locked_minor_units,
+            do_not_disturb=guest.do_not_disturb,
+            cleaning_preference=guest.cleaning_preference,
+            cleaning_preference_note=guest.cleaning_preference_note,
+        )
+
+    await publisher.publish(
+        channel=Channels.GUEST_DND_CHANGED,
+        payload={
+            "guest_id": snapshot.id,
+            "room_id": snapshot.room_id,
+            "room_number": snapshot.room_number,
+            "do_not_disturb": snapshot.do_not_disturb,
+        },
+    )
+    return snapshot
+
+
+@router.put("/{guest_id}/cleaning-preference", response_model=GuestOut)
+async def set_cleaning_preference(
+    guest_id: uuid.UUID,
+    payload: CleaningPreferenceRequest,
+    session: SessionDep,
+    publisher: PublisherDep,
+    _=Depends(require_role(*CAN_CHECK_IN)),
+) -> GuestOut:
+    repo = GuestRepository(session)
+    async with session.begin():
+        guest = await repo.get(guest_id)
+        if guest is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="guest not found")
+        if guest.checked_out_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "not_checked_in", "message": "guest already checked out"},
+            )
+        await repo.set_cleaning_preference(
+            guest,
+            preference=payload.cleaning_preference.value,
+            note=payload.cleaning_preference_note,
+        )
+        snapshot = GuestOut(
+            id=str(guest.id),
+            full_name=guest.full_name,
+            phone=guest.phone,
+            room_id=str(guest.room_id),
+            room_number=guest.room.room_number,
+            floor=guest.room.floor,
+            room_type=guest.room.room_type,
+            checked_in_at=guest.checked_in_at,
+            expected_checkout_at=guest.expected_checkout_at,
+            nightly_rate_locked_minor_units=guest.nightly_rate_locked_minor_units,
+            do_not_disturb=guest.do_not_disturb,
+            cleaning_preference=guest.cleaning_preference,
+            cleaning_preference_note=guest.cleaning_preference_note,
+        )
+
+    await publisher.publish(
+        channel=Channels.GUEST_PREFERENCES_CHANGED,
+        payload={
+            "guest_id": snapshot.id,
+            "room_id": snapshot.room_id,
+            "room_number": snapshot.room_number,
+            "cleaning_preference": snapshot.cleaning_preference,
+            "cleaning_preference_note": snapshot.cleaning_preference_note,
+        },
+    )
+    return snapshot
 
 
 @router.post(
@@ -223,7 +341,8 @@ async def check_out(
         # Aggregate every delivered room-service order for this guest. Open
         # orders (not yet delivered) are *not* billed — staff can finish or
         # cancel them before the bill is finalised.
-        delivered = await OrderRepository(session).list_delivered_for_guest(guest.id)
+        orders_repo = OrderRepository(session)
+        delivered = await orders_repo.list_delivered_for_guest(guest.id)
         order_charges = [o.total_minor_units for o in delivered]
 
         snapshot = compute_bill(
@@ -233,6 +352,10 @@ async def check_out(
         )
 
         bill = await bills.create(guest_id=guest.id, room_id=guest.room_id, snapshot=snapshot)
+        # Stamp each delivered order as billed inside the same transaction —
+        # an outage between bill INSERT and this UPDATE would otherwise leave
+        # the orders eligible for a second invoice.
+        await orders_repo.mark_billed(delivered)
         guest.checked_out_at = now
 
         room = await rooms.get(guest.room_id)
