@@ -173,7 +173,14 @@ def seedguests(count: int) -> None:
                     checked_in_at = datetime.now(timezone.utc) - timedelta(hours=random.randint(1, 12))
                     expected_checkout = checked_in_at + timedelta(days=nights)
                     
-                    # Create guest
+                    # Generate credentials
+                    import uuid
+                    from src.services.credential_generator import generate_guest_pin, hash_pin
+                    auth_user_id = uuid.uuid4()
+                    guest_pin = generate_guest_pin()
+                    pin_hash = hash_pin(guest_pin)
+                    
+                    # Create guest with auth_user_id
                     guest = Guest(
                         full_name=full_name,
                         phone=phone,
@@ -184,6 +191,7 @@ def seedguests(count: int) -> None:
                         nightly_rate_locked_minor_units=room.nightly_rate_minor_units,
                         cleaning_preference=random.choice(["morning", "afternoon", "evening"]),
                         do_not_disturb=random.choice([True, False, False, False]),
+                        auth_user_id=auth_user_id,
                     )
                     session.add(guest)
                     
@@ -199,7 +207,7 @@ def seedguests(count: int) -> None:
                     floor = room.floor
                     room_type = room.room_type
                     
-                # Publish check-in event outside transaction (after successful commit)
+                # Publish events outside transaction
                 await publisher.publish(
                     channel=Channels.GUEST_CHECKED_IN,
                     payload={
@@ -212,8 +220,21 @@ def seedguests(count: int) -> None:
                         "checked_in_at": checked_in_at.isoformat(),
                     },
                 )
+                # Publish credential event so auth-service creates guest user
+                await publisher.publish(
+                    channel=Channels.GUEST_CREDENTIAL_CREATED,
+                    payload={
+                        "auth_user_id": str(auth_user_id),
+                        "phone": phone,
+                        "password_hash": pin_hash,
+                        "full_name": full_name,
+                        "guest_id": guest_id,
+                        "room_id": room_id,
+                        "room_number": room_number,
+                    },
+                )
                 seeded += 1
-                click.echo(f"[ok] room #{room_number} assigned to {full_name} ({phone})")
+                click.echo(f"[ok] room #{room_number} assigned to {full_name} ({phone}) PIN={guest_pin}")
 
             # Clean up redis connection
             await redis_client.aclose()
