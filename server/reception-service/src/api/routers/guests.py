@@ -488,6 +488,12 @@ async def check_out(
         finalized_at = bill.finalized_at
         room_number = room.room_number
         floor = room.floor
+        # Carry the departing guest's cleaning preferences into the vacate
+        # event so housekeeping can show "the previous guest preferred
+        # morning cleaning" as context on the new queue card.
+        departed_dnd = guest.do_not_disturb
+        departed_pref = guest.cleaning_preference
+        departed_pref_note = guest.cleaning_preference_note
 
     # Three events fan out post-commit. Order matters for the dashboard's
     # narrative: bill → guest → vacated.
@@ -519,6 +525,11 @@ async def check_out(
             "room_number": room_number,
             "floor": floor,
             "vacated_at": now.isoformat(),
+            # Pass the just-departed guest's preferences so the cleaning
+            # queue entry can be stamped with them at enqueue time.
+            "do_not_disturb": departed_dnd,
+            "cleaning_preference": departed_pref,
+            "cleaning_preference_note": departed_pref_note,
         },
     )
 

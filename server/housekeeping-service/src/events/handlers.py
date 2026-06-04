@@ -26,6 +26,11 @@ def make_on_room_vacated(publisher: EventPublisher):
         room_id = uuid.UUID(raw_id)
         room_number = int(payload.get("room_number", 0))
         floor = int(payload.get("floor", 0))
+        # Optional context from the just-departed guest (only present on
+        # rooms.vacated, not on maintenance.resolved — defaults are safe).
+        departed_dnd = bool(payload.get("do_not_disturb", False))
+        departed_pref = str(payload.get("cleaning_preference") or "afternoon")
+        departed_pref_note = payload.get("cleaning_preference_note")
 
         async with async_session_factory() as session:
             async with session.begin():
@@ -36,7 +41,12 @@ def make_on_room_vacated(publisher: EventPublisher):
                     logger.info("room %s already in queue, skipping replay", room_id)
                     return
                 entry = await repo.enqueue(
-                    room_id=room_id, room_number=room_number, floor=floor
+                    room_id=room_id,
+                    room_number=room_number,
+                    floor=floor,
+                    do_not_disturb=departed_dnd,
+                    cleaning_preference=departed_pref,
+                    cleaning_preference_note=departed_pref_note,
                 )
                 snapshot = (str(entry.id), entry.queued_at.isoformat())
 
