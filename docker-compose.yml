@@ -54,6 +54,7 @@ services:
       - ./server/auth-service/alembic:/app/alembic
     command: >
       sh -c "python manage.py migrate &&
+             python manage.py seedusers &&
              uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
     expose: ["8000"]
 
@@ -69,6 +70,8 @@ services:
       - ./server/reception-service/alembic:/app/alembic
     command: >
       sh -c "python manage.py migrate &&
+             python manage.py seedrooms &&
+             python manage.py seedguests --count 8 &&
              uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
     expose: ["8000"]
 
@@ -100,6 +103,7 @@ services:
       - ./server/room-service/alembic:/app/alembic
     command: >
       sh -c "python manage.py migrate &&
+             python manage.py seedmenu &&
              uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
     expose: ["8000"]
 

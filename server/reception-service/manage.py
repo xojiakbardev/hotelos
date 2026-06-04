@@ -48,6 +48,78 @@ def migrate() -> None:
         raise click.Abort()
 
 
+# Default rooms to seed — [room_number, floor, room_type, proximity, price_minor_units]
+SEED_ROOMS = [
+    # 1-qavat: 101-110
+    (101, 1, "single",     "elevator", 20000000),
+    (102, 1, "single",     "elevator", 20000000),
+    (103, 1, "double",     "elevator", 35000000),
+    (104, 1, "double",     "stairs",   35000000),
+    (105, 1, "suite",      "elevator", 80000000),
+    (106, 1, "accessible", "elevator", 25000000),
+    (107, 1, "single",     "stairs",   20000000),
+    (108, 1, "double",     "stairs",   35000000),
+    (109, 1, "suite",      "stairs",   80000000),
+    (110, 1, "single",     "other",    20000000),
+    # 2-qavat: 201-210
+    (201, 2, "single",     "elevator", 22000000),
+    (202, 2, "single",     "elevator", 22000000),
+    (203, 2, "double",     "elevator", 38000000),
+    (204, 2, "double",     "stairs",   38000000),
+    (205, 2, "suite",      "elevator", 90000000),
+    (206, 2, "accessible", "elevator", 27000000),
+    (207, 2, "double",     "stairs",   38000000),
+    (208, 2, "single",     "other",    22000000),
+    (209, 2, "suite",      "stairs",   90000000),
+    (210, 2, "double",     "elevator", 38000000),
+    # 3-qavat: 301-310
+    (301, 3, "single",     "elevator", 24000000),
+    (302, 3, "double",     "elevator", 40000000),
+    (303, 3, "double",     "stairs",   40000000),
+    (304, 3, "suite",      "elevator", 95000000),
+    (305, 3, "suite",      "stairs",   95000000),
+    (306, 3, "single",     "stairs",   24000000),
+    (307, 3, "double",     "elevator", 40000000),
+    (308, 3, "accessible", "elevator", 28000000),
+    (309, 3, "single",     "other",    24000000),
+    (310, 3, "double",     "other",    40000000),
+]
+
+
+@cli.command()
+def seedrooms() -> None:
+    """Seed 30 rooms (3 floors × 10 rooms) if not already present."""
+    from src.domain.enums import Cleanliness, RoomStatus
+    from src.services.freshness import compute_dynamic_price
+
+    async def _run() -> None:
+        async with async_session_factory() as session:
+            async with session.begin():
+                existing = set(
+                    (await session.execute(select(Room.room_number))).scalars().all()
+                )
+                added = 0
+                for num, floor, rtype, prox, price in SEED_ROOMS:
+                    if num in existing:
+                        continue
+                    room = Room(
+                        room_number=num,
+                        floor=floor,
+                        room_type=rtype,
+                        proximity=prox,
+                        nightly_rate_minor_units=price,
+                        cleanliness_status=Cleanliness.CLEAN.value,
+                        status=RoomStatus.AVAILABLE.value,
+                        freshness_score=1.0,
+                        dynamic_price_minor_units=compute_dynamic_price(price, 1.0),
+                    )
+                    session.add(room)
+                    added += 1
+        click.echo(f"seeded {added} rooms ({len(SEED_ROOMS) - added} already present)")
+
+    asyncio.run(_run())
+
+
 
 @cli.command()
 @click.option("--count", default=10, help="Number of fake guests to seed")
