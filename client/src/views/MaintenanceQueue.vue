@@ -41,19 +41,30 @@ const criticalOpen = computed(() =>
 )
 
 onMounted(() => {
-  store.load()
+  store.load(auth.role || undefined)
   if (isManager.value) loadHistory()
+  if (isTechnician.value) loadMyResolved()
 })
 
 watch(
   () => ws.lastEvent,
   (env) => {
     if (env?.channel?.startsWith('maintenance.')) {
-      store.load()
+      store.load(auth.role || undefined)
       if (isManager.value) loadHistory()
+      if (isTechnician.value) loadMyResolved()
     }
   }
 )
+
+const myResolved = ref<Issue[]>([])
+
+async function loadMyResolved() {
+  try {
+    const all = await maintenanceApi.myQueue()
+    myResolved.value = all.filter(i => i.status === 'resolved')
+  } catch { /* ignore */ }
+}
 
 async function loadHistory() {
   resolvedLoading.value = true
@@ -92,7 +103,7 @@ async function resolve(issue: Issue) {
     apply: () => { issue.status = 'resolved'; issue.resolved_at = new Date().toISOString() },
     revert: () => Object.assign(issue, before),
     call: () => maintenanceApi.resolve(issue.id),
-    ok: (u) => { store.removeById(u.id); if (isManager.value) loadHistory() },
+    ok: (u) => { store.removeById(u.id); if (isManager.value) loadHistory(); if (isTechnician.value) loadMyResolved() },
     successMsg: (u) => `#${u.room_number}-xona muammosi hal qilindi`,
     errorMsg: (e) => `Xato: ${parseApiError(e)}`
   })
@@ -161,6 +172,21 @@ function onReported() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <!-- Technician resolved history -->
+      <div v-if="myResolved.length" class="space-y-3">
+        <h3 class="text-sm font-semibold text-muted-foreground">Hal qilganlarim ({{ myResolved.length }})</h3>
+        <Card v-for="i in myResolved" :key="i.id" class="opacity-75">
+          <CardContent class="p-4 space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="font-mono font-semibold">#{{ i.room_number }} <span class="text-muted-foreground font-normal">/ {{ i.floor }}q</span></span>
+              <Badge variant="success">Hal qilindi</Badge>
+            </div>
+            <p class="text-sm text-muted-foreground">{{ i.description }}</p>
+            <p class="text-xs text-muted-foreground">{{ i.resolved_at ? new Date(i.resolved_at).toLocaleString('uz-UZ') : '' }}</p>
+          </CardContent>
+        </Card>
       </div>
     </template>
 

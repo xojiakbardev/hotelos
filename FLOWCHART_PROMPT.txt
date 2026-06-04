@@ -1,0 +1,286 @@
+================================================================================
+PROMPT: HotelOS Guest Full Lifecycle Flowchart (BPMN standartida)
+================================================================================
+
+Quyidagi flowchart'ni BPMN (Business Process Model and Notation) qoidalari 
+asosida chizing. Bitta mehmonning mehmonxonaga kirishidan chiqib ketgunigacha 
+barcha xizmatlardan foydalangan holati tasvirlangan.
+
+BPMN elementlari:
+- Oval (●→) = Start/End event
+- To'rtburchak (□) = Task/Activity
+- Romb (◇) = Gateway (qaror nuqtasi) — Ha/Yo'q
+- Parallelogram = Ma'lumot kiritish/chiqarish
+- Strelka (→) = Oqim yo'nalishi
+- Swim lanes = Har bir ishtirokchi/servis uchun alohida qator
+
+================================================================================
+SWIM LANES (ishtirokchilar):
+================================================================================
+1. MEHMON (Guest)
+2. RECEPTION (Qabulchi / Manager)  
+3. RECEPTION-SERVICE (Backend)
+4. AUTH-SERVICE (Backend)
+5. HOUSEKEEPING (Tozalovchi)
+6. HOUSEKEEPING-SERVICE (Backend)
+7. ROOM-SERVICE / KITCHEN (Oshxona)
+8. MAINTENANCE (Texnik)
+9. MAINTENANCE-SERVICE (Backend)
+
+================================================================================
+FLOWCHART BOSQICHLARI:
+================================================================================
+
+[START ●] Mehmon mehmonxonaga keladi
+
+───── RECEPTION LANE ─────
+[□] Mehmon ma'lumotlarini kiritish
+    (ism, telefon, pasport, xona turi, tunlar soni, tozalash vaqti)
+
+[□] "Qabul qilish" tugmasini bosish
+
+───── RECEPTION-SERVICE LANE ─────
+[□] Xona tayinlash algoritmini ishga tushirish
+    (SELECT ... FOR UPDATE SKIP LOCKED)
+
+[◇] Mos xona bormi?
+    |
+    |— YO'Q → [□] "Xona mavjud emas" xabari → [END ●] Mehmon kutadi/ketadi
+    |
+    |— HA ↓
+
+[□] Xona holatini "occupied" ga o'zgartirish
+[□] Guest row yaratish (DB)
+[□] PIN kod generatsiya qilish (4 raqam)
+[□] PIN hash qilish (bcrypt)
+[□] Event: "guests.checked_in" publish
+[□] Event: "guests.credential_created" publish
+
+───── AUTH-SERVICE LANE ─────
+[□] Event qabul qilish: "guests.credential_created"
+[□] Guest user yaratish (phone=login, PIN=parol, role=guest)
+
+───── RECEPTION LANE ─────
+[□] PIN va Login ko'rsatish (modal)
+[□] Mehmonla PIN berish (qog'ozda)
+
+[□] Mehmon xonaga joylashdi ✓
+
+═══════════════════════════════════════════════════════════════
+MEHMON XONADA — XIZMATLARDAN FOYDALANISH
+═══════════════════════════════════════════════════════════════
+
+───── MEHMON LANE ─────
+[□] Mehmon portaliga kirish (telefon + PIN)
+
+[◇] Qaysi xizmat kerak?
+    |
+    |— OVQAT BUYURTMA → (A) Buyurtma flow
+    |— TEXNIK MUAMMO → (B) Maintenance flow
+    |— TOZALASH SO'ROVI → (C) Cleaning flow
+    |— CHIQISH → (D) Check-out flow
+
+─────────────────────────────────────
+(A) XONA XIZMATI BUYURTMA FLOW:
+─────────────────────────────────────
+
+───── MEHMON LANE ─────
+[□] Menyu ko'rish
+[□] Taom tanlash va savatga qo'shish
+[□] Buyurtmani tasdiqlash
+
+───── RECEPTION-SERVICE LANE ─────
+[□] Order yaratish (status = "received")
+[□] Event: "orders.received" publish
+
+───── ROOM-SERVICE / KITCHEN LANE ─────
+[□] Buyurtma qabul qilindi (dashboard'da ko'rinadi)
+
+───── RECEPTION LANE ─────
+[□] Statusni yangilash: received → preparing
+[□] Event: "orders.preparing" publish
+
+[□] Statusni yangilash: preparing → delivering
+[□] Event: "orders.delivering" publish
+
+[□] Statusni yangilash: delivering → delivered
+[□] Event: "orders.delivered" publish
+
+───── MEHMON LANE ─────
+[□] Real-time yangilanish: "Buyurtma yetkazildi" ✓
+
+─────────────────────────────────────
+(B) TEXNIK MUAMMO FLOW:
+─────────────────────────────────────
+
+───── MEHMON LANE ─────
+[□] Muammoni tasvirlash (masalan: "Dush singan")
+[□] "Yuborish" tugmasi
+
+───── RECEPTION-SERVICE LANE ─────
+[□] Event: "maintenance.reported" publish
+    (room_id, description, urgency=normal)
+
+───── MAINTENANCE-SERVICE LANE ─────
+[□] Issue yaratish (status = "reported")
+[□] Navbatga qo'shish (urgency bo'yicha tartiblangan)
+
+───── RECEPTION-SERVICE LANE ─────
+[□] Xona holati: cleanliness → "maintenance"
+    (xona endi boshqa mehmon uchun tayinlanmaydi)
+
+───── MAINTENANCE LANE (Texnik) ─────
+[□] Navbatni ko'rish
+[□] Muammoni qabul qilish ("Assign me")
+
+───── MAINTENANCE-SERVICE LANE ─────
+[□] Status: reported → assigned
+[□] assigned_technician_id = texnik.id
+
+───── MAINTENANCE LANE ─────
+[□] Muammoni hal qilish
+[□] "Hal qilindi" tugmasi
+
+───── MAINTENANCE-SERVICE LANE ─────
+[□] Status: assigned → resolved
+[□] Event: "maintenance.resolved" publish
+
+───── RECEPTION-SERVICE LANE ─────
+[□] Event qabul: "maintenance.resolved"
+[□] Xona holati: maintenance → dirty
+    (tozalash kerak, lekin maintenance tugadi)
+
+───── HOUSEKEEPING-SERVICE LANE ─────
+[□] Event qabul: "maintenance.resolved"
+[□] Xonani tozalash navbatiga qo'shish
+
+[→ Flow C ga o'tadi (tozalash)]
+
+─────────────────────────────────────
+(C) TOZALASH SO'ROVI FLOW:
+─────────────────────────────────────
+
+───── MEHMON LANE ─────
+[□] Tozalash vaqti va muhimlikni tanlash
+[□] "Yuborish" tugmasi
+
+───── RECEPTION-SERVICE LANE ─────
+[□] CleaningRequest yaratish (DB)
+[□] Event: "rooms.cleaning_requested" publish
+
+───── HOUSEKEEPING-SERVICE LANE ─────
+[□] So'rov navbatga qo'shildi (status = "pending")
+
+───── HOUSEKEEPING LANE (Tozalovchi) ─────
+[□] Navbatni ko'rish
+
+[◇] "Bezovta qilmang" yoqilganmi?
+    |— HA → [□] Kutish (skip) → keyingi xona
+    |— YO'Q ↓
+
+[□] "Boshlash" tugmasi
+───── HOUSEKEEPING-SERVICE LANE ─────
+[□] Status: pending → in_progress
+[□] started_at = NOW()
+[□] Event: "rooms.cleaning_started" publish
+
+───── RECEPTION-SERVICE LANE ─────
+[□] Xona holati: → cleaning
+
+───── HOUSEKEEPING LANE ─────
+[□] Xonani tozalash (jismoniy ish)
+[□] Rasm olish (isbot)
+[□] "Toza deb belgilash" tugmasi + rasm yuklash
+
+───── HOUSEKEEPING-SERVICE LANE ─────
+[◇] Rasm majburiymi?
+    |— HA va rasm yo'q → [□] "Rasm kerak" xatosi → orqaga
+    |— YO'Q yoki rasm bor ↓
+
+[□] Rasmni diskka saqlash
+[□] Status: in_progress → completed
+[□] Event: "rooms.cleaned" publish
+
+───── RECEPTION-SERVICE LANE ─────
+[□] Event qabul: "rooms.cleaned"
+[□] Xona holati: cleaning → clean
+[□] status → available
+[□] freshness_score = 1.0
+[□] dynamic_price = base × 1.15 (+15%)
+[□] last_cleaned_at = NOW()
+
+[□] Xona endi yangi mehmon uchun tayyor ✓
+
+═══════════════════════════════════════════════════════════════
+(D) CHECK-OUT FLOW:
+═══════════════════════════════════════════════════════════════
+
+───── RECEPTION LANE ─────
+[□] "Check-out" tugmasini bosish
+
+───── RECEPTION-SERVICE LANE ─────
+[□] Tunlar sonini hisoblash
+    nights = MAX(1, CEIL(soatlar / 24))
+
+[□] Yetkazilgan buyurtmalarni yig'ish
+    orders = SELECT WHERE status='delivered' AND is_billed=FALSE
+
+[□] Hisob-kitob formulasi:
+    room_cost = nights × nightly_rate
+    service_cost = SUM(orders.total)
+    total = room_cost + service_cost
+
+[□] Bill yaratish (DB)
+[□] Buyurtmalarni "billed" deb belgilash (qayta hisob oldini olish)
+[□] guest.checked_out_at = NOW()
+[□] room.status = available
+[□] room.cleanliness = dirty
+
+[□] Event: "bills.finalized" publish
+[□] Event: "guests.checked_out" publish
+[□] Event: "rooms.vacated" publish
+[□] Event: "guests.credential_deactivated" publish
+
+───── AUTH-SERVICE LANE ─────
+[□] Event qabul: "credential_deactivated"
+[□] Guest user: is_active = FALSE
+    (endi login qila olmaydi)
+
+───── HOUSEKEEPING-SERVICE LANE ─────
+[□] Event qabul: "rooms.vacated"
+[□] Tozalash navbatiga qo'shish (pending)
+
+───── RECEPTION LANE ─────
+[□] Yakuniy hisobni ko'rsatish:
+    ┌────────────────────────┐
+    │ Xona: X tun × Y so'm  │
+    │ Xona xizmati: Z so'm   │
+    │ JAMI: T so'm           │
+    └────────────────────────┘
+
+[END ●] Mehmon jo'natildi. Xona tozalash kutmoqda.
+
+================================================================================
+QUYIDAGI PARALLEL JARAYONLAR FON'DA ISHLAYDI:
+================================================================================
+
+[Parallel □] FRESHNESS DECAY (har 5 daqiqada):
+    - Barcha toza xonalar freshness'ini qayta hisoblash
+    - 24 soatdan keyin: freshness=0 → avtomatik dirty
+    - Dinamik narx yangilanadi
+
+[Parallel □] WEBSOCKET GATEWAY:
+    - Barcha event'larni frontend'ga real-time uzatish
+    - Dashboard avtomatik yangilanadi
+    - Mehmon portali buyurtma statusini ko'radi
+
+================================================================================
+DIAGRAMMA UCHUN RANGLAR TAVSIYASI:
+================================================================================
+- Yashil:  Muvaffaqiyatli holatlar (clean, delivered, resolved)
+- Sariq:   Kutish holatlari (pending, received, reported)
+- Ko'k:    Jarayonda (in_progress, preparing, delivering, assigned)
+- Qizil:   Xato/To'xtatish (no_rooms, rejected, dirty)
+- Kulrang:  Terminal holatlar (checked_out, cancelled)
+
+================================================================================

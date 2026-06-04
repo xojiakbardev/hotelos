@@ -15,18 +15,24 @@ export const useMaintenanceStore = defineStore('maintenance', {
     assigned: (s) => s.open.filter((i) => i.status === 'assigned')
   },
   actions: {
-    async load() {
+    async load(role?: string) {
       this.loading = true
       this.error = null
       try {
-        const [open, mine] = await Promise.all([
-          maintenanceApi.queue(),
-          maintenanceApi.myQueue().catch(() => [] as Issue[])
-        ])
-        this.open = open
-        this.mine = mine
+        if (role === 'technician') {
+          // Texnik: faqat ochiq navbat + menga tayinlangan
+          const [open, mine] = await Promise.all([
+            maintenanceApi.queue(),
+            maintenanceApi.myQueue(),
+          ])
+          this.open = open
+          this.mine = mine
+        } else {
+          // Manager/reception: faqat ochiq navbat (myQueue kerak emas)
+          this.open = await maintenanceApi.queue()
+          this.mine = []
+        }
       } catch (e: unknown) {
-        // Silently handle 403 — means role doesn't have access
         const err = e as { response?: { status?: number; data?: { message?: string } }; message?: string }
         if (err.response?.status === 403) {
           this.open = []

@@ -57,7 +57,7 @@ onMounted(() => {
     housekeeping.load()
   }
   if (auth.role !== 'cleaner') {
-    maintenance.load()
+    maintenance.load(auth.role || undefined)
   }
 })
 
@@ -70,7 +70,7 @@ watch(
     if (ch.startsWith('guests.') && (role === 'manager' || role === 'reception')) { guests.load(); loadDailyStats() }
     if (ch.startsWith('rooms.') && (role === 'manager' || role === 'cleaner')) housekeeping.load()
     if (ch.startsWith('orders.') && (role === 'manager' || role === 'reception')) orders.load()
-    if (ch.startsWith('maintenance.') && role !== 'cleaner') maintenance.load()
+    if (ch.startsWith('maintenance.') && role !== 'cleaner') maintenance.load(role || undefined)
     if (
       (ch.startsWith('rooms.') || ch.startsWith('guests.') ||
        ch.startsWith('orders.') || ch.startsWith('bills.')) &&

@@ -1,0 +1,362 @@
+================================================================================
+  HotelOS — Asosiy Flow'lar Pseudocode
+================================================================================
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FLOW 1: MEHMON QABUL QILISH (Check-in + Xona Tayinlash Algoritmi)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FUNCTION check_in(full_name, phone, room_type, nights, floor_pref, proximity_pref):
+
+    // 1. Xona tayinlash algoritmi (SELECT ... FOR UPDATE SKIP LOCKED)
+    BEGIN TRANSACTION:
+        
+        IF room_id berilgan:
+            // To'g'ridan-to'g'ri tayinlash (receptionist tanlagan)
+            room = SELECT * FROM rooms
+                   WHERE id = room_id
+                     AND cleanliness = 'clean'
+                     AND status = 'available'
+                   FOR UPDATE SKIP LOCKED
+            
+            IF room IS NULL:
+                THROW "room_not_available" (409)
+        ELSE:
+            // Algoritm orqali tanlash
+            candidates = SELECT * FROM rooms
+                         WHERE room_type = requested_type
+                           AND cleanliness = 'clean'
+                           AND status = 'available'
+                         ORDER BY last_cleaned_at ASC   // eng uzoq toza = birinchi
+                         LIMIT 20
+                         FOR UPDATE SKIP LOCKED
+            
+            IF candidates IS EMPTY:
+                THROW "no_rooms_available" (409)
+            
+            // Afzalliklar bo'yicha tartiblash
+            scored_rooms = []
+            FOR EACH room IN candidates:
+                score = 0
+                IF room.floor == floor_pref:        score += 10
+                IF room.proximity == proximity_pref: score += 5
+                scored_rooms.APPEND((room, score))
+            
+            room = scored_rooms.SORT_BY(score DESC).FIRST()
+        
+        // 2. Xona holatini yangilash
+        room.status = 'occupied'
+        room.last_assigned_at = NOW()
+        
+        // 3. Credential generatsiya
+        auth_user_id = UUID()
+        pin = RANDOM_4_DIGIT()          // masalan: "7533"
+        pin_hash = BCRYPT(pin)
+        
+        // 4. Mehmon yaratish
+        guest = INSERT INTO guests (
+            full_name, phone, room_id, auth_user_id,
+            checked_in_at = NOW(),
+            expected_checkout_at = NOW() + nights * 24h,
+            nightly_rate_locked = room.nightly_rate
+        )
+    
+    COMMIT TRANSACTION
+
+    // 5. Event'lar nashr qilish (post-commit)
+    PUBLISH "guests.checked_in" {guest_id, room_number, full_name}
+    PUBLISH "guests.credential_created" {auth_user_id, phone, pin_hash, guest_id}
+    
+    // 6. Auth-service event handler (async)
+    // → Yangi User row yaratadi (role=guest, must_change_password=true)
+    // → Yoki mavjud phone+guest user'ni yangilaydi (repeat visitor)
+
+    RETURN {guest, room_number, guest_pin, guest_login=phone}
+
+END FUNCTION
+
+// MUHIM: FOR UPDATE SKIP LOCKED — parallel check-in'larda bitta xona
+// ikki marta band bo'lmasligini kafolatlaydi. Ikkinchi tranzaksiya
+// birinchisi qulflagan qatorni o'tkazib, keyingi xonani oladi.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FLOW 2: CHECK-OUT VA HISOB-KITOB (Billing Algorithm)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FUNCTION check_out(guest_id):
+    
+    BEGIN TRANSACTION:
+        
+        // 1. Mehmonni topish va tekshirish
+        guest = SELECT * FROM guests WHERE id = guest_id
+        IF guest IS NULL:             THROW "not_found" (404)
+        IF guest.checked_out_at != NULL: THROW "already_checked_out" (409)
+        
+        // 2. Tunlar hisobi (minimal 1 tun — mehmonxona standart qoidasi)
+        elapsed_hours = (NOW() - guest.checked_in_at) / 3600
+        nights_stayed = MAX(1, CEIL(elapsed_hours / 24))
+        
+        // 3. Xona xizmati buyurtmalari yig'indisi
+        delivered_orders = SELECT * FROM orders
+                          WHERE guest_id = guest_id
+                            AND status = 'delivered'
+                            AND is_billed = FALSE
+        
+        room_service_total = SUM(order.total FOR order IN delivered_orders)
+        
+        // 4. Hisob formulasi
+        room_cost = nights_stayed * guest.nightly_rate_locked
+        total = room_cost + room_service_total + extras - discount
+        
+        // 5. Bill yaratish
+        bill = INSERT INTO bills (
+            guest_id, room_id, nights, nightly_rate,
+            room_cost, room_service_charges, total,
+            finalized_at = NOW()
+        )
+        
+        // 6. Buyurtmalarni "billed" deb belgilash (qayta hisob oldini olish)
+        FOR EACH order IN delivered_orders:
+            order.is_billed = TRUE
+            order.billed_at = NOW()
+        
+        // 7. Mehmon va xona holatini yangilash
+        guest.checked_out_at = NOW()
+        room = guest.room
+        room.status = 'available'
+        room.cleanliness_status = 'dirty'    // tozalash kerak
+    
+    COMMIT TRANSACTION
+    
+    // 8. Event'lar (post-commit)
+    PUBLISH "bills.finalized"    {bill_id, total}
+    PUBLISH "guests.checked_out" {guest_id, room_number}
+    PUBLISH "rooms.vacated"      {room_id, room_number, floor}
+    PUBLISH "guests.credential_deactivated" {auth_user_id}
+    
+    // 9. Housekeeping subscriber:
+    // → rooms.vacated event'ni oladi
+    // → Tozalash navbatiga yangi entry qo'shadi (status=pending)
+    
+    // 10. Auth-service subscriber:
+    // → credential_deactivated event'ni oladi
+    // → Guest user'ni is_active=false qiladi
+
+    RETURN {bill, total, nights, room_number}
+
+END FUNCTION
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FLOW 3: TOZALASH NAVBATI (Housekeeping Lifecycle)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Trigger: "rooms.vacated" event kelganda avtomatik navbatga qo'shiladi
+
+FUNCTION on_room_vacated(room_id, room_number, floor):
+    INSERT INTO cleaning_queue (
+        room_id, room_number, floor,
+        status = 'pending',
+        queued_at = NOW()
+    )
+END FUNCTION
+
+
+FUNCTION start_cleaning(entry_id, cleaner_user_id):
+    
+    entry = SELECT * FROM cleaning_queue WHERE id = entry_id
+    IF entry.status != 'pending': THROW "wrong_state" (409)
+    
+    // DND tekshirish (mehmon bezovta qilmang degan bo'lsa)
+    IF entry.do_not_disturb == TRUE:
+        THROW "dnd_active — mehmon bezovta qilmaslikni so'ragan"
+    
+    entry.status = 'in_progress'
+    entry.started_at = NOW()
+    entry.cleaner_user_id = cleaner_user_id
+    COMMIT
+    
+    // Reception'ga xabar
+    PUBLISH "rooms.cleaning_started" {room_id}
+    // → Reception handler: room.cleanliness = 'cleaning'
+
+END FUNCTION
+
+
+FUNCTION complete_cleaning(entry_id, photo_file):
+    
+    // Sozlama tekshirish
+    photo_required = GET_SETTING("photo_required")  // default: true
+    IF photo_required AND photo_file IS NULL:
+        THROW "Rasm yuklash majburiy" (422)
+    
+    entry = SELECT * FROM cleaning_queue WHERE id = entry_id
+    IF entry.status != 'in_progress': THROW "wrong_state" (409)
+    
+    // Rasm saqlash (agar berilgan bo'lsa)
+    IF photo_file:
+        photo_path = SAVE_TO_DISK(photo_file, entry.room_id)
+        entry.photo_path = photo_path
+    
+    entry.status = 'completed'
+    entry.completed_at = NOW()
+    COMMIT
+    
+    // Reception'ga xabar
+    PUBLISH "rooms.cleaned" {room_id, cleaned_at}
+    // → Reception handler:
+    //     room.cleanliness = 'clean'
+    //     room.status = 'available'
+    //     room.freshness_score = 1.0
+    //     room.dynamic_price = base_price * 1.15  (+15% premium)
+    //     room.last_cleaned_at = cleaned_at
+
+END FUNCTION
+
+
+// FRESHNESS DECAY (Background task — har 5 daqiqada)
+FUNCTION freshness_decay_tick():
+    
+    rooms = SELECT * FROM rooms
+            WHERE cleanliness = 'clean' AND status = 'available'
+    
+    FOR EACH room IN rooms:
+        hours_since = (NOW() - room.last_cleaned_at) / 3600
+        score = MAX(0.0, 1.0 - hours_since / 24.0)   // 24 soatda 0 ga tushadi
+        
+        room.freshness_score = score
+        room.dynamic_price = room.base_price * (0.85 + 0.30 * score)
+        
+        IF score <= 0.0:
+            room.cleanliness_status = 'dirty'   // avtomatik tozalash kerak
+    
+    COMMIT
+
+END FUNCTION
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FLOW 4: XONA XIZMATI BUYURTMA LIFECYCLE (Order → Kitchen → Delivery)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Buyurtma holatlari: received → preparing → delivering → delivered
+// Har bir o'tish advance() funksiyasi orqali amalga oshadi
+
+FUNCTION create_order(guest_id, items):
+    
+    // 1. Mehmon tekshirish
+    guest = SELECT * FROM guests WHERE id = guest_id
+    IF guest IS NULL:                THROW "not_found"
+    IF guest.checked_out_at != NULL: THROW "guest_checked_out" (409)
+    
+    // 2. Jami hisob
+    total = 0
+    FOR EACH item IN items:
+        total += item.qty * item.price_minor_units
+    
+    // 3. Buyurtma yaratish
+    order = INSERT INTO orders (
+        guest_id, room_id = guest.room_id,
+        room_number, floor,
+        items = items,              // JSONB array
+        total_minor_units = total,
+        status = 'received',
+        received_at = NOW(),
+        taken_by_user_id = current_user.id
+    )
+    COMMIT
+    
+    // 4. Real-time xabar
+    PUBLISH "orders.received" {order_id, room_number, items, total}
+    // → WebSocket gateway mehmon panelida va dashboard'da ko'rsatadi
+
+    RETURN order
+
+END FUNCTION
+
+
+FUNCTION advance_order(order_id):
+    
+    order = SELECT * FROM orders WHERE id = order_id
+    IF order IS NULL: THROW "not_found"
+    
+    // Status mashinasi (faqat oldinga, orqaga yo'q)
+    NEXT_STATUS = {
+        'received':   'preparing',
+        'preparing':  'delivering', 
+        'delivering': 'delivered',
+        'delivered':  NULL           // terminal — o'tish mumkin emas
+    }
+    
+    next = NEXT_STATUS[order.status]
+    IF next IS NULL:
+        THROW "terminal_state — buyurtma allaqachon yetkazilgan" (409)
+    
+    order.status = next
+    SWITCH next:
+        CASE 'preparing':  order.preparing_at  = NOW()
+        CASE 'delivering': order.delivering_at = NOW()
+        CASE 'delivered':  order.delivered_at  = NOW()
+    COMMIT
+    
+    // Real-time event
+    PUBLISH "orders.{next}" {order_id, room_number, new_status}
+    // → Dashboard va mehmon portali real vaqtda yangilanadi
+    // → 'delivered' bo'lganda: check-out da hisobga qo'shiladi
+
+    RETURN order
+
+END FUNCTION
+
+
+// MEHMON PORTALI BUYURTMA (Guest self-service)
+FUNCTION guest_create_order(guest_context, items):
+    
+    // guest_context JWT dan olinadi (role=guest, guest_id, room_id)
+    guest = SELECT * FROM guests WHERE id = guest_context.guest_id
+    IF guest.checked_out_at != NULL: THROW "not_checked_in" (403)
+    
+    total = SUM(item.price * item.qty FOR item IN items)
+    
+    order = INSERT INTO orders (
+        guest_id, room_id, room_number, floor,
+        items, total, status = 'received',
+        taken_by_user_id = guest_context.auth_user_id
+    )
+    COMMIT
+    
+    PUBLISH "orders.received" {order_id, room_number, items}
+    RETURN order
+
+END FUNCTION
+
+
+================================================================================
+  ARXITEKTURA ESLATMALARI
+================================================================================
+
+1. MIKROSERVISLAR:
+   - auth-service:         login, JWT, user CRUD, audit log
+   - reception-service:    xonalar, mehmonlar, buyurtmalar, bronlar, hisob-kitob
+   - housekeeping-service: tozalash navbati, rasm yuklash, sozlamalar
+   - maintenance-service:  texnik muammolar navbati
+   - room-service:         menyu CRUD, oshxona ko'rinishi
+   - ws-gateway:           WebSocket multiplexer (real-time dashboard)
+
+2. ALOQA:
+   - Servislar o'rtasida: Redis Pub/Sub (event-driven, at-most-once)
+   - Frontend ↔ Backend:  REST API + WebSocket (live updates)
+   - Database:            PostgreSQL (har bir servis o'z schema'si)
+
+3. CONCURRENCY XAVFSIZLIGI:
+   - SELECT ... FOR UPDATE SKIP LOCKED (xona tayinlash)
+   - is_billed flag (qayta hisob oldini olish)
+   - Idempotent event handler'lar (duplicate event xavfsiz)
+
+4. DINAMIK NARXLASH:
+   - freshness_score: 1.0 (yangi) → 0.0 (24 soat)
+   - dynamic_price = base × (0.85 + 0.30 × score)
+   - Score 1.0 = +15% premium | Score 0.0 = -15% discount
+================================================================================
