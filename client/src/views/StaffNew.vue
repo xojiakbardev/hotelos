@@ -1,13 +1,14 @@
 <script setup lang="ts">
-/**
- * Embeddable "add staff" form. Mounted in a Modal from StaffList.
- */
 import { computed, ref } from 'vue'
-import Button from '@/components/Button.vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { authApi, type Role, type UserOut } from '@/api/auth'
 import { useStaffStore } from '@/stores/staff'
 import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/composables/useOptimistic'
+import { Loader2, Eye, EyeOff } from 'lucide-vue-next'
 
 const emit = defineEmits<{ success: [user: UserOut]; cancel: [] }>()
 
@@ -23,13 +24,14 @@ const ROLE_UZ: Record<Role, string> = {
   manager: 'Boshqaruvchi',
   reception: 'Qabulchi',
   technician: 'Texnik',
-  cleaner: 'Tozalovchi'
+  cleaner: 'Tozalovchi',
+  guest: 'Mehmon'
 }
-const ROLE_HINTS: Record<Role, string> = {
-  manager: 'Hamma sahifa va operatsiyalarga to‘liq kirish.',
-  reception: 'Qabul/jo‘natish, mehmon profili, xona xizmati, muammo qayd etish.',
+const ROLE_HINTS: Record<string, string> = {
+  manager: "Hamma sahifa va operatsiyalarga to'liq kirish.",
+  reception: "Qabul/jo'natish, mehmon profili, xona xizmati.",
   technician: 'Texnik xizmat navbati: muammolarni qabul qilish va hal qilish.',
-  cleaner: 'Tozalash navbati: xonalarni tozalashni boshlash va yakunlash.'
+  cleaner: 'Tozalash navbati: xonalarni tozalashni boshlash va yakunlash.',
 }
 
 const passwordOk = computed(() => form.value.password.length >= 6)
@@ -37,8 +39,8 @@ const phoneOk = computed(() => /^\+?[1-9]\d{9,14}$/.test(form.value.phone.trim()
 
 async function submit() {
   error.value = null
-  if (!phoneOk.value) { error.value = 'Telefon formatda bo‘lishi kerak: +998901234567.'; return }
-  if (!passwordOk.value) { error.value = 'Parol kamida 6 ta belgidan iborat bo‘lsin.'; return }
+  if (!phoneOk.value) { error.value = "Telefon formatda bo'lishi kerak: +998901234567."; return }
+  if (!passwordOk.value) { error.value = "Parol kamida 6 ta belgidan iborat bo'lsin."; return }
 
   submitting.value = true
   try {
@@ -49,7 +51,7 @@ async function submit() {
       role: form.value.role
     })
     store.push(created)
-    toast.success(`${created.full_name || created.phone} qo‘shildi (${ROLE_UZ[created.role]})`)
+    toast.success(`${created.full_name || created.phone} qo'shildi (${ROLE_UZ[created.role]})`)
     emit('success', created)
   } catch (e: unknown) {
     const err = e as { response?: { status?: number } }
@@ -60,93 +62,61 @@ async function submit() {
 </script>
 
 <template>
-  <form class="form" @submit.prevent="submit" novalidate>
-    <label class="field">
-      <span>To‘liq ism <span class="text-muted">(ixtiyoriy)</span></span>
-      <input v-model="form.full_name" class="input" type="text" maxlength="120" autocomplete="name" />
-    </label>
+  <form @submit.prevent="submit" class="space-y-4" novalidate>
+    <div class="space-y-2">
+      <Label>To'liq ism (ixtiyoriy)</Label>
+      <Input v-model="form.full_name" autocomplete="name" />
+    </div>
 
-    <label class="field">
-      <span>Telefon raqami</span>
-      <input v-model="form.phone" class="input" type="tel" required placeholder="+998901234567" autocomplete="off" />
-      <span v-if="form.phone && !phoneOk" class="hint hint--warn">Format: ixtiyoriy <code>+</code>, keyin 10–15 raqam.</span>
-    </label>
+    <div class="space-y-2">
+      <Label>Telefon raqami</Label>
+      <Input v-model="form.phone" type="tel" placeholder="+998901234567" required autocomplete="off" />
+      <p v-if="form.phone && !phoneOk" class="text-xs text-amber-600">Format: +998XXXXXXXXX</p>
+    </div>
 
-    <label class="field">
-      <span>Parol</span>
-      <div class="pw">
-        <input
+    <div class="space-y-2">
+      <Label>Parol</Label>
+      <div class="flex gap-2">
+        <Input
           v-model="form.password"
-          class="input"
           :type="showPassword ? 'text' : 'password'"
-          required minlength="6" maxlength="128"
+          required
           autocomplete="new-password"
+          class="flex-1"
         />
-        <button
-          type="button"
-          class="pw-toggle"
-          @click="showPassword = !showPassword"
-          :aria-label="showPassword ? 'Parolni yashirish' : 'Parolni ko‘rsatish'"
-        >{{ showPassword ? 'Yashirish' : 'Ko‘rsatish' }}</button>
+        <Button variant="outline" size="icon" type="button" @click="showPassword = !showPassword">
+          <component :is="showPassword ? EyeOff : Eye" class="w-4 h-4" />
+        </Button>
       </div>
-      <span class="hint" :class="passwordOk ? 'hint--ok' : 'hint--warn'">
+      <p :class="passwordOk ? 'text-xs text-green-600' : 'text-xs text-amber-600'">
         {{ passwordOk ? '✓ Kamida 6 ta belgi.' : 'Kamida 6 ta belgi kerak.' }}
-      </span>
-    </label>
+      </p>
+    </div>
 
-    <label class="field">
-      <span>Rol</span>
-      <select v-model="form.role" class="select" required>
-        <option value="manager">Boshqaruvchi</option>
-        <option value="reception">Qabulchi</option>
-        <option value="technician">Texnik</option>
-        <option value="cleaner">Tozalovchi</option>
-      </select>
-      <span class="hint">{{ ROLE_HINTS[form.role] }}</span>
-    </label>
+    <div class="space-y-2">
+      <Label>Rol</Label>
+      <Select v-model="form.role">
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="manager">Boshqaruvchi</SelectItem>
+          <SelectItem value="reception">Qabulchi</SelectItem>
+          <SelectItem value="technician">Texnik</SelectItem>
+          <SelectItem value="cleaner">Tozalovchi</SelectItem>
+        </SelectContent>
+      </Select>
+      <p class="text-xs text-muted-foreground">{{ ROLE_HINTS[form.role] }}</p>
+    </div>
 
-    <div v-if="error" class="error" role="alert">{{ error }}</div>
+    <div v-if="error" class="rounded-md bg-destructive/10 text-destructive text-sm p-3" role="alert">{{ error }}</div>
 
-    <div class="row-foot">
-      <Button variant="ghost" size="md" type="button" :disabled="submitting" @click="emit('cancel')">Bekor qilish</Button>
-      <Button type="submit" variant="primary" size="md" :loading="submitting">
-        {{ submitting ? 'Yaratilmoqda…' : 'Xodimni qo‘shish' }}
+    <div class="flex justify-end gap-2 pt-2">
+      <Button variant="outline" type="button" :disabled="submitting" @click="emit('cancel')">Bekor</Button>
+      <Button type="submit" :disabled="submitting">
+        <Loader2 v-if="submitting" class="w-4 h-4 mr-2 animate-spin" />
+        Xodimni qo'shish
       </Button>
     </div>
   </form>
 </template>
-
-<style scoped>
-.form { display: flex; flex-direction: column; gap: 16px; }
-
-.pw { display: flex; gap: 6px; }
-.pw .input { flex: 1; }
-.pw-toggle {
-  padding: 0 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font: inherit;
-  font-size: var(--font-size-sm);
-  color: var(--ink-600);
-}
-.pw-toggle:hover { background: var(--bg-subtle); }
-
-code {
-  background: var(--bg-subtle);
-  padding: 1px 4px;
-  border-radius: var(--radius-xs);
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-}
-
-.error {
-  padding: 11px 14px;
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
-  border-radius: 10px;
-  font-size: var(--font-size-sm);
-}
-
-.row-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
-</style>

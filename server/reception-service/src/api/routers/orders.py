@@ -51,6 +51,16 @@ async def list_open_orders(
     return [OrderOut.model_validate(o, from_attributes=True) for o in rows]
 
 
+@router.get("/history", response_model=list[OrderOut])
+async def list_delivered_orders(
+    session: SessionDep,
+    _=Depends(require_role(*CAN_WORK)),
+) -> list[OrderOut]:
+    """Recently delivered orders (last 50)."""
+    rows = await OrderRepository(session).list_delivered_recent()
+    return [OrderOut.model_validate(o, from_attributes=True) for o in rows]
+
+
 @router.get("/by-guest/{guest_id}", response_model=list[OrderOut])
 async def list_for_guest(
     guest_id: uuid.UUID,

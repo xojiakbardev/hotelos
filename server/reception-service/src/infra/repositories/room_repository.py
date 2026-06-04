@@ -98,3 +98,59 @@ class RoomRepository:
     async def delete(self, room: Room) -> None:
         await self.session.delete(room)
         await self.session.flush()
+
+    async def get_by_numbers(self, numbers: list[int]) -> list[Room]:
+        stmt = select(Room).where(Room.room_number.in_(numbers))
+        return list((await self.session.execute(stmt)).scalars().all())
+
+
+    async def has_related_data(self, room_id: uuid.UUID) -> bool:
+        """Check if a room has any related guest, bill, order, or reservation data."""
+        from src.domain.models import Bill, Guest, Order, Reservation
+
+        for model, col in [
+            (Guest, Guest.room_id),
+            (Bill, Bill.room_id),
+            (Order, Order.room_id),
+            (Reservation, Reservation.room_id),
+        ]:
+            stmt = select(model.id).where(col == room_id).limit(1)
+            result = (await self.session.execute(stmt)).scalar_one_or_none()
+            if result is not None:
+                return True
+        return False
+
+    async def delete_with_related(self, room: Room) -> None:
+        """Delete a room and all its related data (confirmed by user).
+
+        Deletion order matters because of FK constraints:
+        orders → bills → guests → reservations → room
+        """
+        from sqlalchemy import delete as sql_delete
+        from src.domain.models import Bill, CleaningRequest, Guest, Order, Reservation
+
+        room_id = room.id
+
+        # Delete orders (FK → guests, rooms)
+        await self.session.execute(
+            sql_delete(Order).where(Order.room_id == room_id)
+        )
+        # Delete bills (FK → guests, rooms)
+        await self.session.execute(
+            sql_delete(Bill).where(Bill.room_id == room_id)
+        )
+        # Delete cleaning requests (FK → guests, rooms)
+        await self.session.execute(
+            sql_delete(CleaningRequest).where(CleaningRequest.room_id == room_id)
+        )
+        # Delete guests (FK → rooms)
+        await self.session.execute(
+            sql_delete(Guest).where(Guest.room_id == room_id)
+        )
+        # Delete reservations (FK → rooms)
+        await self.session.execute(
+            sql_delete(Reservation).where(Reservation.room_id == room_id)
+        )
+        # Finally delete the room itself
+        await self.session.delete(room)
+        await self.session.flush()

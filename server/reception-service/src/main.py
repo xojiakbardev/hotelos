@@ -17,6 +17,7 @@ from fastapi import FastAPI
 
 from src.api.exceptions import install_handlers
 from src.api.routers import guests as guests_router
+from src.api.routers import guest_portal as guest_portal_router
 from src.api.routers import metrics as metrics_router
 from src.api.routers import orders as orders_router
 from src.api.routers import reservations as reservations_router
@@ -51,10 +52,21 @@ async def lifespan(app: FastAPI):
     await subscriber.start()
     app.state.subscriber = subscriber
 
+    # Background task: decay freshness and auto-dirty stale rooms
+    import asyncio
+    from src.tasks.freshness_decay import freshness_decay_loop
+    decay_task = asyncio.create_task(freshness_decay_loop(), name="freshness-decay")
+    app.state.decay_task = decay_task
+
     logger.info("reception-service ready (redis=%s)", settings.redis_url)
     try:
         yield
     finally:
+        decay_task.cancel()
+        try:
+            await decay_task
+        except asyncio.CancelledError:
+            pass
         await app.state.subscriber.stop()
         await app.state.redis.aclose()
         await engine.dispose()
@@ -73,6 +85,7 @@ app.include_router(guests_router.router)
 app.include_router(orders_router.router)
 app.include_router(reservations_router.router)
 app.include_router(metrics_router.router)
+app.include_router(guest_portal_router.router)
 
 
 @app.get("/health", tags=["meta"])

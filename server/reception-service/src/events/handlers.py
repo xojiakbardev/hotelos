@@ -56,7 +56,10 @@ async def on_room_cleaned(envelope: dict) -> None:
 
     This closes the lifecycle loop:
       occupied → vacated → dirty → cleaning → **clean (here)** → assignable again.
+    Also recalculates freshness_score and dynamic_price.
     """
+    from src.services.freshness import compute_dynamic_price
+
     payload = envelope.get("payload") or {}
     raw_id = payload.get("room_id")
     if not raw_id:
@@ -77,6 +80,10 @@ async def on_room_cleaned(envelope: dict) -> None:
             room.cleanliness_status = Cleanliness.CLEAN.value
             room.status = RoomStatus.AVAILABLE.value
             room.last_cleaned_at = cleaned_at
+            room.freshness_score = 1.0
+            room.dynamic_price_minor_units = compute_dynamic_price(
+                room.nightly_rate_minor_units, 1.0
+            )
 
 
 async def on_maintenance_reported(envelope: dict) -> None:

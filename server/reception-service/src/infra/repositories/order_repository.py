@@ -29,6 +29,16 @@ class OrderRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_delivered_recent(self, limit: int = 50) -> list[Order]:
+        """Recently delivered orders for the history tab."""
+        stmt = (
+            select(Order)
+            .where(Order.status == OrderStatus.DELIVERED.value)
+            .order_by(Order.delivered_at.desc())
+            .limit(limit)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def list_delivered_for_guest(self, guest_id: uuid.UUID) -> list[Order]:
         """Used by the billing algorithm to compute the room-service charges.
 

@@ -9,6 +9,9 @@ BCRYPT_COST: int = 12
 JWT_CLAIM_SUB: str = "sub"
 JWT_CLAIM_PHONE: str = "phone"
 JWT_CLAIM_ROLE: str = "role"
+JWT_CLAIM_GUEST_ID: str = "guest_id"
+JWT_CLAIM_ROOM_ID: str = "room_id"
+JWT_CLAIM_ROOM_NUMBER: str = "room_number"
 
 # Phone validation: E.164-ish, 10-15 digits, optional leading +.
 PHONE_REGEX: str = r"^\+?[1-9]\d{9,14}$"

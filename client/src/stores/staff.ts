@@ -12,7 +12,7 @@ export const useStaffStore = defineStore('staff', {
   getters: {
     byRole: (s) => (role: Role) => s.users.filter((u) => u.role === role),
     counts: (s) => {
-      const c: Record<Role, number> = { manager: 0, reception: 0, technician: 0, cleaner: 0 }
+      const c: Record<Role, number> = { manager: 0, reception: 0, technician: 0, cleaner: 0, guest: 0 }
       for (const u of s.users) c[u.role] += 1
       return c
     }
@@ -22,7 +22,9 @@ export const useStaffStore = defineStore('staff', {
       this.loading = true
       this.error = null
       try {
-        this.users = await authApi.listUsers(role)
+        const all = await authApi.listUsers(role)
+        // Filter out guest accounts — they're not staff
+        this.users = all.filter(u => u.role !== 'guest')
       } catch (e: unknown) {
         const err = e as { response?: { data?: { message?: string } }; message?: string }
         this.error = err.response?.data?.message ?? err.message ?? 'failed to load staff'

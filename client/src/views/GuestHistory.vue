@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import PageHeader from '@/components/PageHeader.vue'
-import Button from '@/components/Button.vue'
-import StatCard from '@/components/StatCard.vue'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { receptionApi, type GuestHistory } from '@/api/reception'
 import { parseApiError } from '@/composables/useOptimistic'
+import { ArrowLeft } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,18 +18,14 @@ const error = ref<string | null>(null)
 
 const phone = computed(() => String(route.params.phone || ''))
 
-function money(minor: number) { return `$${(minor / 100).toFixed(2)}` }
+function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
 
 async function load() {
   loading.value = true
   error.value = null
-  try {
-    history.value = await receptionApi.guestHistory(phone.value)
-  } catch (e: unknown) {
-    error.value = parseApiError(e)
-  } finally {
-    loading.value = false
-  }
+  try { history.value = await receptionApi.guestHistory(phone.value) }
+  catch (e: unknown) { error.value = parseApiError(e) }
+  finally { loading.value = false }
 }
 
 onMounted(load)
@@ -35,73 +33,77 @@ watch(phone, load)
 </script>
 
 <template>
-  <div class="page">
-    <PageHeader :title="history ? `${history.full_name} — tarix` : 'Mehmon tarixi'">
-      <template #actions>
-        <Button variant="ghost" size="md" @click="router.back()">← Orqaga</Button>
-      </template>
-    </PageHeader>
+  <div class="space-y-6">
+    <div class="flex items-center gap-3">
+      <Button variant="ghost" size="sm" @click="router.back()">
+        <ArrowLeft class="w-4 h-4 mr-1" />
+        Orqaga
+      </Button>
+      <h2 class="text-lg font-semibold">{{ history?.full_name || 'Mehmon tarixi' }}</h2>
+    </div>
 
-    <section v-if="error" class="error">{{ error }}</section>
-    <section v-if="loading" class="empty card-paper">Yuklanmoqda…</section>
+    <div v-if="error" class="rounded-md bg-destructive/10 text-destructive text-sm p-4">{{ error }}</div>
+    <div v-if="loading" class="text-center py-12 text-muted-foreground">Yuklanmoqda…</div>
 
     <template v-else-if="history">
-      <section class="stats">
-        <StatCard label="Telefon" :value="history.phone" hint="Mehmon kaliti" />
-        <StatCard label="Jami tashriflar" :value="history.total_stays" :hint="history.repeat_visitor ? 'Qaytmas mehmon' : 'Yangi mehmon'" tone="primary" />
-        <StatCard label="Jami tunlar" :value="history.total_nights" hint="Barcha tashriflar" />
-        <StatCard label="Jami sarflangan" :value="money(history.total_spent_minor_units)" hint="Yakunlangan hisoblar" tone="success" />
-      </section>
+      <!-- Stats -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card>
+          <CardContent class="p-4 text-center">
+            <p class="text-2xl font-bold">{{ history.total_stays }}</p>
+            <p class="text-xs text-muted-foreground">Jami tashriflar</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent class="p-4 text-center">
+            <p class="text-2xl font-bold">{{ history.total_nights }}</p>
+            <p class="text-xs text-muted-foreground">Jami tunlar</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent class="p-4 text-center">
+            <p class="text-2xl font-bold text-primary">{{ money(history.total_spent_minor_units) }}</p>
+            <p class="text-xs text-muted-foreground">Sarflangan</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent class="p-4 text-center">
+            <Badge :variant="history.repeat_visitor ? 'success' : 'secondary'">
+              {{ history.repeat_visitor ? 'Doimiy mehmon' : 'Yangi mehmon' }}
+            </Badge>
+          </CardContent>
+        </Card>
+      </div>
 
-      <article class="card-paper table-wrap">
-        <div class="section-header">Tashriflar tarixi</div>
-        <table class="data">
-          <thead>
-            <tr>
-              <th>Xona</th>
-              <th>Kirish</th>
-              <th>Chiqish</th>
-              <th class="num">Tunlar</th>
-              <th class="num">To‘lov</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="s in history.stays" :key="s.guest_id">
-              <td>#{{ s.room_number }} <span class="text-muted">/ {{ s.floor }}-q</span></td>
-              <td>{{ new Date(s.checked_in_at).toLocaleDateString('uz-UZ') }}</td>
-              <td>{{ s.checked_out_at ? new Date(s.checked_out_at).toLocaleDateString('uz-UZ') : '—' }}</td>
-              <td class="num tabular">{{ s.nights }}</td>
-              <td class="num mono tabular">{{ s.total_minor_units !== null ? money(s.total_minor_units) : '—' }}</td>
-              <td>
-                <span v-if="s.checked_out_at" class="chip chip--ok">Yakunlangan</span>
-                <span v-else class="chip chip--live">Hozir mehmonxonada</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </article>
+      <!-- Stays table -->
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Xona</TableHead>
+              <TableHead>Kirish</TableHead>
+              <TableHead>Chiqish</TableHead>
+              <TableHead class="text-right">Tunlar</TableHead>
+              <TableHead class="text-right">To'lov</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-for="s in history.stays" :key="s.guest_id">
+              <TableCell class="font-mono">#{{ s.room_number }} <span class="text-muted-foreground">/ {{ s.floor }}q</span></TableCell>
+              <TableCell>{{ new Date(s.checked_in_at).toLocaleDateString('uz-UZ') }}</TableCell>
+              <TableCell>{{ s.checked_out_at ? new Date(s.checked_out_at).toLocaleDateString('uz-UZ') : '—' }}</TableCell>
+              <TableCell class="text-right tabular-nums">{{ s.nights }}</TableCell>
+              <TableCell class="text-right font-mono tabular-nums">{{ s.total_minor_units !== null ? money(s.total_minor_units) : '—' }}</TableCell>
+              <TableCell>
+                <Badge :variant="s.checked_out_at ? 'success' : 'default'">
+                  {{ s.checked_out_at ? 'Yakunlangan' : 'Mehmonxonada' }}
+                </Badge>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Card>
     </template>
   </div>
 </template>
-
-<style scoped>
-.page { display: flex; flex-direction: column; gap: 16px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
-.error { padding: 14px; background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); border-radius: var(--radius-md); }
-.empty { padding: 48px; text-align: center; color: var(--muted-fg); }
-
-.table-wrap { padding: 0; overflow: hidden; }
-.section-header { padding: 14px 18px; font-weight: 600; font-size: var(--font-size-sm); color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.05em; background: var(--bg-subtle); }
-.data { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
-.data th, .data td { padding: 12px 18px; text-align: left; border-bottom: 1px solid var(--border); }
-.data thead th { background: var(--bg-subtle); font-weight: 600; font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-fg); }
-.data tbody tr:last-child td { border-bottom: none; }
-.data .num { text-align: right; }
-.mono { font-family: var(--font-mono); }
-.tabular { font-variant-numeric: tabular-nums; }
-
-.chip { padding: 4px 10px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: 500; }
-.chip--ok { background: color-mix(in srgb, var(--success, #059669) 14%, transparent); color: var(--success, #059669); }
-.chip--live { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
-</style>

@@ -16,8 +16,12 @@ export const useGuestsStore = defineStore('guests', {
       try {
         this.guests = await receptionApi.listGuests()
       } catch (e: unknown) {
-        const err = e as { response?: { data?: { message?: string } }; message?: string }
-        this.error = err.response?.data?.message ?? err.message ?? 'failed to load guests'
+        const err = e as { response?: { status?: number; data?: { message?: string } }; message?: string }
+        if (err.response?.status === 403) {
+          this.guests = []
+        } else {
+          this.error = err.response?.data?.message ?? err.message ?? 'failed to load guests'
+        }
       } finally {
         this.loading = false
       }

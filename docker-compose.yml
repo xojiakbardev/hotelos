@@ -49,6 +49,12 @@ services:
     environment:
       SERVICE_NAME: auth-service
       SERVICE_SCHEMA: auth
+    volumes:
+      - ./server/auth-service/src:/app/src
+      - ./server/auth-service/alembic:/app/alembic
+    command: >
+      sh -c "python manage.py migrate &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
     expose: ["8000"]
 
   reception-service:
@@ -58,6 +64,12 @@ services:
     environment:
       SERVICE_NAME: reception-service
       SERVICE_SCHEMA: reception
+    volumes:
+      - ./server/reception-service/src:/app/src
+      - ./server/reception-service/alembic:/app/alembic
+    command: >
+      sh -c "python manage.py migrate &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
     expose: ["8000"]
 
   housekeeping-service:
@@ -67,6 +79,13 @@ services:
     environment:
       SERVICE_NAME: housekeeping-service
       SERVICE_SCHEMA: housekeeping
+    volumes:
+      - ./server/housekeeping-service/src:/app/src
+      - ./server/housekeeping-service/alembic:/app/alembic
+      - housekeeping_uploads:/app/uploads
+    command: >
+      sh -c "python manage.py migrate &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
     expose: ["8000"]
 
   room-service:
@@ -76,6 +95,12 @@ services:
     environment:
       SERVICE_NAME: room-service
       SERVICE_SCHEMA: room_service
+    volumes:
+      - ./server/room-service/src:/app/src
+      - ./server/room-service/alembic:/app/alembic
+    command: >
+      sh -c "python manage.py migrate &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
     expose: ["8000"]
 
   maintenance-service:
@@ -85,6 +110,12 @@ services:
     environment:
       SERVICE_NAME: maintenance-service
       SERVICE_SCHEMA: maintenance
+    volumes:
+      - ./server/maintenance-service/src:/app/src
+      - ./server/maintenance-service/alembic:/app/alembic
+    command: >
+      sh -c "python manage.py migrate &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
     expose: ["8000"]
 
   ws-gateway:
@@ -93,6 +124,10 @@ services:
     container_name: hotelos-ws-gateway
     environment:
       SERVICE_NAME: ws-gateway
+    volumes:
+      - ./server/ws-gateway/src:/app/src
+    command: >
+      sh -c "uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
     expose: ["8000"]
 
   client:
@@ -103,6 +138,13 @@ services:
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL}
       VITE_WS_URL: ${VITE_WS_URL}
+    volumes:
+      - ./client/src:/app/src
+      - ./client/index.html:/app/index.html
+      - ./client/vite.config.ts:/app/vite.config.ts
+      - ./client/tailwind.config.js:/app/tailwind.config.js
+      - ./client/postcss.config.js:/app/postcss.config.js
+      - ./client/tsconfig.json:/app/tsconfig.json
     expose:
       - "80"
     depends_on:
@@ -128,3 +170,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  housekeeping_uploads:

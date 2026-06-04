@@ -76,9 +76,27 @@ class CleaningQueueEntry(Base):
         String(16), nullable=False, server_default="afternoon", default="afternoon"
     )
     cleaning_preference_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Photo proof of cleaning (relative path to uploaded file).
+    photo_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class SystemSettings(Base):
+    """Key-value store for housekeeping system settings (e.g. photo_required)."""
+
+    __tablename__ = "system_settings"
+    __table_args__ = {"schema": SCHEMA}
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

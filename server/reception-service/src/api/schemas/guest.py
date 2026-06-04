@@ -34,7 +34,7 @@ class CheckInRequest(BaseModel):
 
     room_id: uuid.UUID | None = None
     room_type: RoomType | None = None
-    floor_preference: int | None = Field(default=None, ge=1, le=10)
+    floor_preference: int | None = Field(default=None, ge=1, le=99)
     proximity_preference: Proximity | None = None
     cleaning_preference: CleaningPreference = CleaningPreference.AFTERNOON
     cleaning_preference_note: str | None = Field(default=None, max_length=200)
@@ -113,3 +113,12 @@ class GuestOut(BaseModel):
     do_not_disturb: bool = False
     cleaning_preference: CleaningPreference = CleaningPreference.AFTERNOON
     cleaning_preference_note: str | None = None
+    auth_user_id: str | None = None
+
+
+class CheckInResponse(GuestOut):
+    """Extended response returned only from the check-in endpoint.
+    Includes the plain-text PIN so reception can hand it to the guest."""
+
+    guest_pin: str
+    guest_login: str

@@ -1,7 +1,7 @@
 import { api } from './client'
 
 export type RoomType = 'single' | 'double' | 'suite' | 'accessible'
-export type Proximity = 'elevator' | 'stairs'
+export type Proximity = 'elevator' | 'stairs' | 'other'
 export type Cleanliness = 'clean' | 'dirty' | 'cleaning' | 'maintenance'
 export type RoomStatus = 'available' | 'occupied' | 'out_of_service'
 
@@ -14,6 +14,8 @@ export interface Room {
   cleanliness_status: Cleanliness
   status: RoomStatus
   nightly_rate_minor_units: number
+  freshness_score: number
+  dynamic_price_minor_units: number
   last_cleaned_at: string
   last_assigned_at: string | null
 }
@@ -25,7 +27,6 @@ export interface CheckInPayload {
   phone: string
   passport_number?: string
   nights: number
-  // Either room_id (direct, skip algorithm) or room_type (algorithm picks).
   room_id?: string
   room_type?: RoomType
   floor_preference?: number
@@ -48,6 +49,12 @@ export interface Guest {
   do_not_disturb: boolean
   cleaning_preference: CleaningPreference
   cleaning_preference_note: string | null
+  auth_user_id?: string | null
+}
+
+export interface CheckInResponse extends Guest {
+  guest_pin: string
+  guest_login: string
 }
 
 export interface Bill {
@@ -140,16 +147,19 @@ export const receptionApi = {
   listRooms: () => api.get<{ rooms: Room[]; total: number }>('/reception/rooms').then((r) => r.data),
   createRoom: (payload: RoomCreatePayload) =>
     api.post<Room>('/reception/rooms', payload).then((r) => r.data),
+  createRoomsBulk: (payload: { rooms: RoomCreatePayload[] }) =>
+    api.post<{ rooms: Room[]; total: number }>('/reception/rooms/bulk', payload).then((r) => r.data),
   updateRoom: (id: string, payload: RoomUpdatePayload) =>
     api.put<Room>(`/reception/rooms/${id}`, payload).then((r) => r.data),
-  deleteRoom: (id: string) => api.delete(`/reception/rooms/${id}`).then(() => undefined),
+  deleteRoom: (id: string, confirm = false) =>
+    api.delete(`/reception/rooms/${id}`, { params: confirm ? { confirm: true } : undefined }).then(() => undefined),
   listGuests: () => api.get<Guest[]>('/reception/guests').then((r) => r.data),
   dailyGuestStats: (days = 30) =>
     api
       .get<DailyCount[]>('/reception/guests/stats/daily', { params: { days } })
       .then((r) => r.data),
   checkIn: (payload: CheckInPayload) =>
-    api.post<Guest>('/reception/guests/check-in', payload).then((r) => r.data),
+    api.post<CheckInResponse>('/reception/guests/check-in', payload).then((r) => r.data),
   checkOut: (guestId: string) =>
     api.post<Bill>(`/reception/guests/${guestId}/check-out`).then((r) => r.data),
   getGuest: (id: string) => api.get<Guest>(`/reception/guests/${id}`).then((r) => r.data),
@@ -160,6 +170,10 @@ export const receptionApi = {
   setDnd: (guestId: string, value: boolean) =>
     api
       .put<Guest>(`/reception/guests/${guestId}/dnd`, { do_not_disturb: value })
+      .then((r) => r.data),
+  resetGuestPin: (guestId: string) =>
+    api
+      .post<{ new_pin: string; guest_login: string }>(`/reception/guests/${guestId}/reset-pin`)
       .then((r) => r.data),
   setCleaningPreference: (
     guestId: string,
@@ -173,6 +187,7 @@ export const receptionApi = {
       })
       .then((r) => r.data),
   listOrders: () => api.get<Order[]>('/reception/orders').then((r) => r.data),
+  listOrdersHistory: () => api.get<Order[]>('/reception/orders/history').then((r) => r.data),
   createOrder: (payload: OrderCreate) =>
     api.post<Order>('/reception/orders', payload).then((r) => r.data),
   advanceOrder: (orderId: string) =>

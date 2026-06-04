@@ -19,6 +19,7 @@ class UserRole(str, Enum):
     RECEPTION = "reception"
     TECHNICIAN = "technician"
     CLEANER = "cleaner"
+    GUEST = "guest"
 
 
 class RoomType(str, Enum):
@@ -33,6 +34,7 @@ class Proximity(str, Enum):
 
     ELEVATOR = "elevator"
     STAIRS = "stairs"
+    OTHER = "other"
 
 
 class Cleanliness(str, Enum):

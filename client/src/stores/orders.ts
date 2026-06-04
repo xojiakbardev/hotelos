@@ -20,8 +20,12 @@ export const useOrdersStore = defineStore('orders', {
       try {
         this.orders = await receptionApi.listOrders()
       } catch (e: unknown) {
-        const err = e as { response?: { data?: { message?: string } }; message?: string }
-        this.error = err.response?.data?.message ?? err.message ?? 'failed to load orders'
+        const err = e as { response?: { status?: number; data?: { message?: string } }; message?: string }
+        if (err.response?.status === 403) {
+          this.orders = []
+        } else {
+          this.error = err.response?.data?.message ?? err.message ?? 'failed to load orders'
+        }
       } finally {
         this.loading = false
       }

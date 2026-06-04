@@ -28,7 +28,6 @@ class AuthService:
     async def login(self, *, phone: str, password: str) -> AuthResult:
         user = await self.users.get_by_phone(phone)
         if user is None or not user.is_active:
-            # Generic message; do not leak which factor failed.
             raise AuthenticationError("invalid credentials")
         if not verify_password(password, user.password_hash):
             raise AuthenticationError("invalid credentials")
@@ -36,5 +35,8 @@ class AuthService:
             user_id=str(user.id),
             phone=user.phone,
             role=user.role.value if isinstance(user.role, UserRole) else str(user.role),
+            guest_id=str(user.guest_id) if user.guest_id else None,
+            room_id=str(user.room_id) if user.room_id else None,
+            room_number=user.room_number,
         )
         return AuthResult(user=user, access_token=token)

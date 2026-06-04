@@ -50,6 +50,6 @@ export const reservationsApi = {
     api.post<Reservation>(`/reception/reservations/${id}/no-show`).then((r) => r.data),
   checkIn: (id: string) =>
     api
-      .post(`/reception/reservations/${id}/check-in`, {})
+      .post<{ guest_pin: string; guest_login: string; room_number: number; full_name: string }>(`/reception/reservations/${id}/check-in`, {})
       .then((r) => r.data)
 }

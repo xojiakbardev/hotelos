@@ -15,6 +15,13 @@ class UserCreate(BaseModel):
     full_name: str | None = Field(default=None, max_length=120)
 
 
+class UserUpdate(BaseModel):
+    full_name: str | None = Field(default=None, max_length=120)
+    role: UserRole | None = None
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+    is_active: bool | None = None
+
+
 class UserOut(BaseModel):
     id: str
     phone: str

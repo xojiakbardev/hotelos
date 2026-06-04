@@ -41,3 +41,4 @@ client/vite.config.js
 
 # Local Claude Code state (already-tracked files stay; new ones won't auto-add)
 .claude/scheduled_tasks.lock
+.kiro

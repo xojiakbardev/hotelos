@@ -20,7 +20,7 @@ from datetime import datetime, time, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.api.dependencies import PublisherDep, SessionDep, require_role
-from src.api.schemas.guest import GuestOut
+from src.api.schemas.guest import CheckInResponse, GuestOut
 from src.api.schemas.reservation import (
     ReservationCheckInRequest,
     ReservationCreate,
@@ -33,6 +33,7 @@ from src.domain.enums import (
     UserRole,
 )
 from src.events.topics import Channels
+from src.services.credential_generator import generate_guest_pin, hash_pin
 from src.infra.repositories.guest_repository import GuestRepository
 from src.infra.repositories.reservation_repository import ReservationRepository
 from src.infra.repositories.room_repository import RoomRepository
@@ -227,14 +228,14 @@ async def mark_no_show(
     return snapshot
 
 
-@router.post("/{reservation_id}/check-in", response_model=GuestOut)
+@router.post("/{reservation_id}/check-in", response_model=CheckInResponse)
 async def check_in_reservation(
     reservation_id: uuid.UUID,
     payload: ReservationCheckInRequest,
     session: SessionDep,
     publisher: PublisherDep,
     _=Depends(require_role(*CAN_MANAGE)),
-) -> GuestOut:
+) -> CheckInResponse:
     """Materialise the reservation into an active Guest stay.
 
     Mirrors the walk-in `/guests/check-in` flow: locks the room, marks it
@@ -277,9 +278,11 @@ async def check_in_reservation(
             )
         await rooms.mark_occupied(room)
 
-        # Hotel-day length: from now until the reservation's check-out date
-        # at noon. Simpler than carrying booking time-of-day; matches the
-        # billing's nights × rate model.
+        # Generate guest self-service credentials
+        auth_user_id = uuid.uuid4()
+        guest_pin = generate_guest_pin()
+        pin_hash = hash_pin(guest_pin)
+
         checkout_dt = datetime.combine(
             reservation.check_out_date, time(12, 0), tzinfo=timezone.utc
         )
@@ -292,38 +295,59 @@ async def check_in_reservation(
             nightly_rate_locked_minor_units=reservation.nightly_rate_locked_minor_units,
             cleaning_preference=payload.cleaning_preference or "afternoon",
             cleaning_preference_note=payload.cleaning_preference_note,
+            auth_user_id=auth_user_id,
         )
         await repo.transition(
             reservation,
             new_status=ReservationStatus.CHECKED_IN,
             guest_id=guest.id,
         )
-        snapshot = GuestOut(
-            id=str(guest.id),
-            full_name=guest.full_name,
-            phone=guest.phone,
-            room_id=str(room.id),
-            room_number=room.room_number,
-            floor=room.floor,
-            room_type=room.room_type,
-            checked_in_at=guest.checked_in_at,
-            expected_checkout_at=guest.expected_checkout_at,
-            nightly_rate_locked_minor_units=guest.nightly_rate_locked_minor_units,
-            do_not_disturb=guest.do_not_disturb,
-            cleaning_preference=guest.cleaning_preference,
-            cleaning_preference_note=guest.cleaning_preference_note,
-        )
+        # Snapshot
+        guest_id_str = str(guest.id)
+        room_id_str = str(room.id)
 
     await publisher.publish(
         channel=Channels.GUEST_CHECKED_IN,
         payload={
-            "guest_id": snapshot.id,
-            "room_id": snapshot.room_id,
-            "room_number": snapshot.room_number,
-            "floor": snapshot.floor,
-            "room_type": snapshot.room_type,
-            "full_name": snapshot.full_name,
-            "checked_in_at": snapshot.checked_in_at.isoformat(),
+            "guest_id": guest_id_str,
+            "room_id": room_id_str,
+            "room_number": room.room_number,
+            "floor": room.floor,
+            "room_type": room.room_type,
+            "full_name": reservation.full_name,
+            "checked_in_at": guest.checked_in_at.isoformat(),
         },
     )
-    return snapshot
+
+    # Publish credential event so auth-service creates the guest user
+    await publisher.publish(
+        channel=Channels.GUEST_CREDENTIAL_CREATED,
+        payload={
+            "auth_user_id": str(auth_user_id),
+            "phone": reservation.phone,
+            "password_hash": pin_hash,
+            "full_name": reservation.full_name,
+            "guest_id": guest_id_str,
+            "room_id": room_id_str,
+            "room_number": room.room_number,
+        },
+    )
+
+    return CheckInResponse(
+        id=guest_id_str,
+        full_name=guest.full_name,
+        phone=guest.phone,
+        room_id=room_id_str,
+        room_number=room.room_number,
+        floor=room.floor,
+        room_type=room.room_type,
+        checked_in_at=guest.checked_in_at,
+        expected_checkout_at=guest.expected_checkout_at,
+        nightly_rate_locked_minor_units=guest.nightly_rate_locked_minor_units,
+        do_not_disturb=guest.do_not_disturb,
+        cleaning_preference=guest.cleaning_preference,
+        cleaning_preference_note=guest.cleaning_preference_note,
+        auth_user_id=str(auth_user_id),
+        guest_pin=guest_pin,
+        guest_login=reservation.phone,
+    )

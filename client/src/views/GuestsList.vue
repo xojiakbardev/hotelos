@@ -1,25 +1,27 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import PageHeader from '@/components/PageHeader.vue'
-import Button from '@/components/Button.vue'
-import StatCard from '@/components/StatCard.vue'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import Modal from '@/components/Modal.vue'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Skeleton } from '@/components/ui/skeleton'
+import GuestDetail from './GuestDetail.vue'
 import CheckInForm from './CheckInForm.vue'
-import { receptionApi, type Guest } from '@/api/reception'
+import { type Guest } from '@/api/reception'
 import { useGuestsStore } from '@/stores/guests'
 import { useWsStore } from '@/stores/ws'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
-import { parseApiError, useOptimistic } from '@/composables/useOptimistic'
-import { ROOM_TYPE_UZ } from '@/lib/labels'
+import { UserPlus, Search } from 'lucide-vue-next'
 
 const guests = useGuestsStore()
 const ws = useWsStore()
 const auth = useAuthStore()
 const toast = useToastStore()
-const router = useRouter()
 
 onMounted(() => guests.load())
 
@@ -31,253 +33,178 @@ watch(
   }
 )
 
-const canCheckOut = computed(() => auth.role === 'manager' || auth.role === 'reception')
-
-const confirmGuest = ref<Guest | null>(null)
+const detailGuest = ref<Guest | null>(null)
 const checkInOpen = ref(false)
+const searchQuery = ref('')
+const filterFloor = ref('all')
 
-const PREF_LABELS: Record<string, string> = {
-  morning: 'Ertalab',
-  afternoon: 'Tushdan keyin',
-  evening: 'Kechqurun',
-  custom: 'Maxsus'
-}
-
-async function toggleDnd(g: Guest) {
-  const target = !g.do_not_disturb
-  const before = g.do_not_disturb
-  g.do_not_disturb = target
-  try {
-    const updated = await receptionApi.setDnd(g.id, target)
-    Object.assign(g, updated)
-    toast.info(target ? `#${g.room_number}: bezovta qilmang yoqildi` : `#${g.room_number}: bezovta qilmang o‘chirildi`)
-  } catch (e) {
-    g.do_not_disturb = before
-    toast.error(`Xato: ${parseApiError(e)}`)
+const filteredGuests = computed(() => {
+  let list = guests.guests
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.trim().toLowerCase()
+    list = list.filter(g =>
+      g.full_name.toLowerCase().includes(q) ||
+      g.phone.includes(q) ||
+      String(g.room_number).includes(q)
+    )
   }
-}
-
-async function cyclePreference(g: Guest) {
-  const order: Array<Guest['cleaning_preference']> = ['morning', 'afternoon', 'evening', 'custom']
-  const idx = order.indexOf(g.cleaning_preference)
-  const next = order[(idx + 1) % order.length]
-  const before = g.cleaning_preference
-  g.cleaning_preference = next
-  try {
-    const updated = await receptionApi.setCleaningPreference(g.id, next, g.cleaning_preference_note)
-    Object.assign(g, updated)
-  } catch (e) {
-    g.cleaning_preference = before
-    toast.error(`Xato: ${parseApiError(e)}`)
+  if (filterFloor.value !== 'all') {
+    list = list.filter(g => String(g.floor) === filterFloor.value)
   }
-}
+  return list
+})
+
+const floors = computed(() => {
+  const set = new Set(guests.guests.map(g => g.floor))
+  return [...set].sort((a, b) => a - b)
+})
 
 const totalRevenuePotential = computed(() =>
   guests.guests.reduce((s, g) => s + g.nightly_rate_locked_minor_units, 0)
 )
 
-function money(minor: number) { return `$${(minor / 100).toFixed(2)}` }
+function onCheckInSuccess() {
+  checkInOpen.value = false
+  guests.load()
+}
+
+function closeCheckIn() {
+  checkInOpen.value = false
+}
+
+function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
 
 function nightsSoFar(g: Guest) {
   const ms = Date.now() - new Date(g.checked_in_at).getTime()
   return Math.max(1, Math.ceil(ms / (24 * 3600 * 1000)))
 }
-
-async function doCheckOut(g: Guest) {
-  confirmGuest.value = null
-  const snapshot = [...guests.guests]
-  const run = useOptimistic({
-    apply: () => guests.removeById(g.id),
-    revert: () => { guests.guests = snapshot },
-    call: () => receptionApi.checkOut(g.id),
-    successMsg: (bill) =>
-      `#${bill.room_number}-xona jo‘natildi — ${bill.nights} tun, jami ${money(bill.total_minor_units)}`,
-    errorMsg: (e) => `Xato: ${parseApiError(e)}`
-  })
-  const bill = await run()
-  if (bill) toast.info(`Hisob ${bill.bill_id.slice(0, 8)}… saqlandi`)
-}
-
-function onCheckInSuccess() {
-  checkInOpen.value = false
-  guests.load()
-}
 </script>
 
 <template>
-  <div class="page">
-    <PageHeader title="Faol mehmonlar">
-      <template #actions>
-        <Button v-if="canCheckOut" variant="primary" size="md" @click="checkInOpen = true">
-          Mehmonni qabul qilish
+  <div class="space-y-6">
+    <!-- Stats -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <Card>
+        <CardContent class="p-5">
+          <p class="text-sm text-muted-foreground">Faol mehmonlar</p>
+          <p class="text-2xl font-bold mt-1">{{ guests.guests.length }}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent class="p-5">
+          <p class="text-sm text-muted-foreground">Tunlik potentsial</p>
+          <p class="text-2xl font-bold mt-1">{{ money(totalRevenuePotential) }}</p>
+        </CardContent>
+      </Card>
+    </div>
+
+    <!-- Filters + actions -->
+    <Card>
+      <CardContent class="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div class="flex gap-3 items-center">
+          <div class="relative">
+            <Search class="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
+            <Input
+              v-model="searchQuery"
+              placeholder="Ism, telefon yoki xona..."
+              class="pl-9 w-[240px]"
+            />
+          </div>
+          <Select v-model="filterFloor">
+            <SelectTrigger class="w-[140px]">
+              <SelectValue placeholder="Qavat" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Barcha qavatlar</SelectItem>
+              <SelectItem v-for="f in floors" :key="f" :value="String(f)">{{ f }}-qavat</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button size="sm" @click="checkInOpen = true">
+          <UserPlus class="w-4 h-4 mr-1" />
+          Yangi mehmon
         </Button>
-      </template>
-    </PageHeader>
+      </CardContent>
+    </Card>
 
-    <section class="stats">
-      <StatCard label="Faol mehmonlar" :value="guests.guests.length" hint="Hozir mehmonxonada" tone="primary" />
-      <StatCard
-        label="Tunlik potentsial"
-        :value="money(totalRevenuePotential)"
-        hint="Barcha aktiv xonalar yig‘indisi"
-        tone="success"
-      />
-    </section>
+    <!-- States -->
+    <div v-if="guests.error" class="rounded-md bg-destructive/10 text-destructive text-sm p-4">
+      {{ guests.error }}
+    </div>
+    <div v-if="guests.loading && !guests.guests.length" class="space-y-3">
+      <Card>
+        <div class="p-4 space-y-4">
+          <div v-for="i in 5" :key="i" class="flex items-center gap-4">
+            <Skeleton class="h-7 w-7 rounded-full" />
+            <Skeleton class="h-4 w-32" />
+            <Skeleton class="h-4 w-28 ml-auto" />
+            <Skeleton class="h-4 w-16" />
+            <Skeleton class="h-4 w-12" />
+            <Skeleton class="h-4 w-20" />
+          </div>
+        </div>
+      </Card>
+    </div>
+    <div v-else-if="!filteredGuests.length" class="text-center py-12 text-muted-foreground">
+      {{ searchQuery || filterFloor !== 'all' ? 'Filtrga mos mehmon topilmadi.' : "Hozircha faol mehmonlar yo'q." }}
+    </div>
 
-    <section v-if="guests.error" class="error">{{ guests.error }}</section>
-    <section v-if="guests.loading && !guests.guests.length" class="empty card-paper">Mehmonlar yuklanmoqda…</section>
-    <section v-else-if="!guests.guests.length" class="empty card-paper">
-      Hozircha faol mehmonlar yo‘q. Mehmonxonada sokin payt.
-    </section>
-
-    <article v-else class="card-paper table-wrap">
-      <table class="data">
-        <thead>
-          <tr>
-            <th>Mehmon</th>
-            <th>Telefon</th>
-            <th>Xona</th>
-            <th>Turi</th>
-            <th>Qabul qilindi</th>
-            <th class="num">Tunlar</th>
-            <th class="num">Tunlik narx</th>
-            <th>Tozalash</th>
-            <th>DND</th>
-            <th v-if="canCheckOut" class="num">Harakat</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="g in guests.guests" :key="g.id">
-            <td>
-              <div class="cell-name">
-                <span class="avatar">{{ g.full_name.slice(0, 1).toUpperCase() }}</span>
-                <span class="name">{{ g.full_name }}</span>
+    <!-- Table -->
+    <Card v-else>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Mehmon</TableHead>
+            <TableHead>Telefon</TableHead>
+            <TableHead>Xona</TableHead>
+            <TableHead>Qabul qilindi</TableHead>
+            <TableHead class="text-right">Tunlar</TableHead>
+            <TableHead class="text-right">Narx/tun</TableHead>
+            <TableHead>Chiqish sanasi</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow
+            v-for="g in filteredGuests"
+            :key="g.id"
+            class="cursor-pointer"
+            @click="detailGuest = g"
+          >
+            <TableCell>
+              <div class="flex items-center gap-2.5">
+                <Avatar class="h-7 w-7">
+                  <AvatarFallback class="text-xs bg-primary/10 text-primary">
+                    {{ g.full_name.slice(0, 1).toUpperCase() }}
+                  </AvatarFallback>
+                </Avatar>
+                <span class="font-medium">{{ g.full_name }}</span>
               </div>
-            </td>
-            <td class="mono text-muted">{{ g.phone }}</td>
-            <td class="mono">#{{ g.room_number }} <span class="text-muted">/ {{ g.floor }}-qavat</span></td>
-            <td>{{ ROOM_TYPE_UZ[g.room_type] || g.room_type }}</td>
-            <td class="text-muted">{{ new Date(g.checked_in_at).toLocaleString('uz-UZ') }}</td>
-            <td class="num mono tabular">{{ nightsSoFar(g) }}</td>
-            <td class="num mono tabular">{{ money(g.nightly_rate_locked_minor_units) }}</td>
-            <td>
-              <button v-if="canCheckOut" type="button" class="chip-btn" @click="cyclePreference(g)" :title="g.cleaning_preference_note || 'Bosing — keyingisini tanlash'">
-                {{ PREF_LABELS[g.cleaning_preference] || g.cleaning_preference }}
-              </button>
-              <span v-else>{{ PREF_LABELS[g.cleaning_preference] || g.cleaning_preference }}</span>
-            </td>
-            <td>
-              <button
-                v-if="canCheckOut"
-                type="button"
-                class="chip-btn"
-                :class="{ 'chip-btn--on': g.do_not_disturb }"
-                @click="toggleDnd(g)"
-              >
-                {{ g.do_not_disturb ? 'Yoqilgan' : 'O‘chiq' }}
-              </button>
-              <span v-else>{{ g.do_not_disturb ? 'Bezovta qilmang' : '—' }}</span>
-            </td>
-            <td v-if="canCheckOut" class="num actions">
-              <Button variant="ghost" size="sm" @click="router.push(`/guests/history/${encodeURIComponent(g.phone)}`)">Tarix</Button>
-              <Button variant="outline" size="sm" @click="confirmGuest = g">Jo‘natish</Button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </article>
+            </TableCell>
+            <TableCell class="text-muted-foreground font-mono text-xs">{{ g.phone }}</TableCell>
+            <TableCell class="font-mono">
+              #{{ g.room_number }}
+              <span class="text-muted-foreground"> / {{ g.floor }}q</span>
+            </TableCell>
+            <TableCell class="text-muted-foreground">{{ new Date(g.checked_in_at).toLocaleDateString('uz-UZ') }}</TableCell>
+            <TableCell class="text-right font-mono tabular-nums">{{ nightsSoFar(g) }}</TableCell>
+            <TableCell class="text-right font-mono tabular-nums">{{ money(g.nightly_rate_locked_minor_units) }}</TableCell>
+            <TableCell class="text-muted-foreground">{{ new Date(g.expected_checkout_at).toLocaleDateString('uz-UZ') }}</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </Card>
 
-    <ConfirmDialog
-      :open="confirmGuest !== null"
-      :title="confirmGuest ? `${confirmGuest.full_name} ni jo‘natish` : ''"
-      :message="confirmGuest
-        ? `#${confirmGuest.room_number}-xonaning hisobi yakunlanadi va tozalash navbatiga qo‘shiladi.`
-        : ''"
-      confirm-label="Jo‘natish"
-      cancel-label="Bekor qilish"
-      tone="primary"
-      @cancel="confirmGuest = null"
-      @confirm="confirmGuest && doCheckOut(confirmGuest)"
-    />
+    <!-- Check-in Dialog -->
+    <Dialog v-model:open="checkInOpen">
+      <DialogContent class="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Mehmonni qabul qilish</DialogTitle>
+        </DialogHeader>
+        <CheckInForm @cancel="closeCheckIn" @success="onCheckInSuccess" />
+      </DialogContent>
+    </Dialog>
 
-    <Modal :open="checkInOpen" title="Mehmonni qabul qilish" size="lg" @close="checkInOpen = false">
-      <CheckInForm @cancel="checkInOpen = false" @success="onCheckInSuccess" />
-    </Modal>
+    <!-- Guest Detail Dialog -->
+    <GuestDetail :guest="detailGuest" :open="detailGuest !== null" @close="detailGuest = null" />
   </div>
 </template>
-
-<style scoped>
-.page { display: flex; flex-direction: column; gap: 16px; }
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 14px;
-}
-
-.error {
-  padding: 14px;
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
-  border-radius: var(--radius-md);
-}
-.empty { padding: 48px; text-align: center; color: var(--muted-fg); }
-
-.table-wrap { padding: 0; overflow: hidden; }
-
-.data {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--font-size-sm);
-}
-.data th, .data td {
-  padding: 12px 18px;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-.data thead th {
-  background: var(--bg-subtle);
-  font-weight: 600;
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted-fg);
-}
-.data tbody tr:last-child td { border-bottom: none; }
-.data tbody tr:hover { background: var(--bg-subtle); }
-.data .num { text-align: right; }
-.mono { font-family: var(--font-mono); }
-
-.cell-name { display: flex; align-items: center; gap: 10px; }
-.avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-full);
-  background: var(--primary-soft-2);
-  color: var(--primary-strong);
-  display: grid;
-  place-items: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--font-size-xs);
-  flex-shrink: 0;
-}
-.name { font-weight: 500; color: var(--ink-900); }
-.chip-btn {
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--bg-subtle);
-  cursor: pointer;
-  font-size: var(--font-size-xs);
-  font-weight: 500;
-}
-.chip-btn:hover { background: var(--bg); }
-td.actions { display: flex; gap: 6px; justify-content: flex-end; }
-.chip-btn--on {
-  background: color-mix(in srgb, var(--warning, #f59e0b) 18%, transparent);
-  color: var(--warning, #b45309);
-  border-color: color-mix(in srgb, var(--warning, #f59e0b) 35%, var(--border));
-}
-</style>

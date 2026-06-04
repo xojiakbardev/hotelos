@@ -1,14 +1,15 @@
 <script setup lang="ts">
-/**
- * Embeddable "report issue" form. Mounted in a Modal from MaintenanceQueue.
- */
 import { computed, onMounted, ref } from 'vue'
-import Button from '@/components/Button.vue'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { receptionApi, type Room } from '@/api/reception'
 import { maintenanceApi, type Issue, type Urgency } from '@/api/maintenance'
 import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/composables/useOptimistic'
 import { URGENCY_UZ } from '@/lib/labels'
+import { Loader2 } from 'lucide-vue-next'
 
 const emit = defineEmits<{ success: [issue: Issue]; cancel: [] }>()
 const toast = useToastStore()
@@ -30,13 +31,6 @@ onMounted(async () => {
   finally { loadingRooms.value = false }
 })
 
-const TYPE_UZ: Record<string, string> = {
-  single: 'bir kishilik', double: 'ikki kishilik', suite: 'lyuks', accessible: 'nogironlar uchun'
-}
-const CLEAN_UZ: Record<string, string> = {
-  clean: 'toza', dirty: 'iflos', cleaning: 'tozalanmoqda', maintenance: 'texnik xizmatda'
-}
-
 async function submit() {
   error.value = null
   if (!selectedRoom.value) { error.value = 'Xonani tanlang.'; return }
@@ -57,61 +51,54 @@ async function submit() {
 </script>
 
 <template>
-  <form class="form" @submit.prevent="submit" novalidate>
-    <label class="field">
-      <span>Xona</span>
-      <select v-model="form.room_id" class="select" required :disabled="loadingRooms">
-        <option value="" disabled>{{ loadingRooms ? 'Xonalar yuklanmoqda…' : 'Xonani tanlang' }}</option>
-        <option v-for="r in rooms" :key="r.id" :value="r.id">
-          #{{ r.room_number }} · {{ r.floor }}-qavat · {{ TYPE_UZ[r.room_type] }} · {{ CLEAN_UZ[r.cleanliness_status] }}
-        </option>
-      </select>
-    </label>
+  <form @submit.prevent="submit" class="space-y-4" novalidate>
+    <div class="space-y-2">
+      <Label>Xona</Label>
+      <Select v-model="form.room_id" :disabled="loadingRooms">
+        <SelectTrigger>
+          <SelectValue :placeholder="loadingRooms ? 'Yuklanmoqda…' : 'Xonani tanlang'" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="r in rooms" :key="r.id" :value="r.id">
+            #{{ r.room_number }} · {{ r.floor }}-qavat · {{ r.room_type }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
 
-    <label class="field">
-      <span>Shoshilinchlik darajasi</span>
-      <select v-model="form.urgency" class="select" required>
-        <option value="critical">Kritik — mehmonlarga xavfli, darhol tuzating</option>
-        <option value="high">Yuqori — bugun mehmonga ta’sir qiladi</option>
-        <option value="normal">O‘rta — 24 soat ichida tuzating</option>
-        <option value="low">Past — kosmetik, shoshilinch emas</option>
-      </select>
-    </label>
+    <div class="space-y-2">
+      <Label>Shoshilinchlik darajasi</Label>
+      <Select v-model="form.urgency">
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="critical">Kritik — darhol tuzating</SelectItem>
+          <SelectItem value="high">Yuqori — bugun</SelectItem>
+          <SelectItem value="normal">O'rta — 24 soat ichida</SelectItem>
+          <SelectItem value="low">Past — shoshilinch emas</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
 
-    <label class="field">
-      <span>Tavsif</span>
-      <textarea
+    <div class="space-y-2">
+      <Label>Tavsif</Label>
+      <Textarea
         v-model="form.description"
-        class="textarea"
         required
-        minlength="3"
-        maxlength="500"
-        rows="4"
         placeholder="masalan, hammomda quvur yorilgan, polda suv"
+        class="min-h-[100px]"
       />
-    </label>
+    </div>
 
-    <div v-if="error" class="error" role="alert">{{ error }}</div>
+    <div v-if="error" class="rounded-md bg-destructive/10 text-destructive text-sm p-3" role="alert">{{ error }}</div>
 
-    <div class="row-foot">
-      <Button variant="ghost" size="md" type="button" :disabled="submitting" @click="emit('cancel')">Bekor qilish</Button>
-      <Button type="submit" variant="primary" size="md" :loading="submitting || loadingRooms">
-        {{ submitting ? 'Yuborilmoqda…' : 'Qayd etish' }}
+    <div class="flex justify-end gap-2 pt-2">
+      <Button variant="outline" type="button" :disabled="submitting" @click="emit('cancel')">Bekor</Button>
+      <Button type="submit" :disabled="submitting || loadingRooms">
+        <Loader2 v-if="submitting" class="w-4 h-4 mr-2 animate-spin" />
+        Qayd etish
       </Button>
     </div>
   </form>
 </template>
-
-<style scoped>
-.form { display: flex; flex-direction: column; gap: 16px; }
-
-.error {
-  padding: 11px 14px;
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
-  border-radius: 10px;
-  font-size: var(--font-size-sm);
-}
-
-.row-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
-</style>

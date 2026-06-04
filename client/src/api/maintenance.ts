@@ -30,6 +30,7 @@ export interface IssueReport {
 export const maintenanceApi = {
   queue: () => api.get<Issue[]>('/maintenance/queue').then((r) => r.data),
   myQueue: () => api.get<Issue[]>('/maintenance/my').then((r) => r.data),
+  history: () => api.get<Issue[]>('/maintenance/history').then((r) => r.data),
   report: (payload: IssueReport) =>
     api.post<Issue>('/maintenance/issues', payload).then((r) => r.data),
   claim: (issueId: string) =>

@@ -19,7 +19,6 @@ export const useMaintenanceStore = defineStore('maintenance', {
       this.loading = true
       this.error = null
       try {
-        // Both queries cheap, both endpoints idempotent.
         const [open, mine] = await Promise.all([
           maintenanceApi.queue(),
           maintenanceApi.myQueue().catch(() => [] as Issue[])
@@ -27,8 +26,14 @@ export const useMaintenanceStore = defineStore('maintenance', {
         this.open = open
         this.mine = mine
       } catch (e: unknown) {
-        const err = e as { response?: { data?: { message?: string } }; message?: string }
-        this.error = err.response?.data?.message ?? err.message ?? 'failed to load issues'
+        // Silently handle 403 — means role doesn't have access
+        const err = e as { response?: { status?: number; data?: { message?: string } }; message?: string }
+        if (err.response?.status === 403) {
+          this.open = []
+          this.mine = []
+        } else {
+          this.error = err.response?.data?.message ?? err.message ?? 'failed to load issues'
+        }
       } finally {
         this.loading = false
       }

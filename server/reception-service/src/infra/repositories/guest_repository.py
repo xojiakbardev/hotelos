@@ -73,6 +73,7 @@ class GuestRepository:
         nightly_rate_locked_minor_units: int,
         cleaning_preference: str = "afternoon",
         cleaning_preference_note: str | None = None,
+        auth_user_id: uuid.UUID | None = None,
     ) -> Guest:
         guest = Guest(
             full_name=full_name,
@@ -83,6 +84,7 @@ class GuestRepository:
             nightly_rate_locked_minor_units=nightly_rate_locked_minor_units,
             cleaning_preference=cleaning_preference,
             cleaning_preference_note=cleaning_preference_note,
+            auth_user_id=auth_user_id,
         )
         self.session.add(guest)
         await self.session.flush()

@@ -18,14 +18,31 @@ import click
 # Default catalogue inserted by `seedmenu`. Prices are minor units
 # (so USD cents / UZS tiyin — driven by whatever the deployment uses).
 SEED_MENU = [
-    ("Espresso",       "drinks",  350,  3),
-    ("Cappuccino",     "drinks",  500,  5),
-    ("Fresh juice",    "drinks",  600,  4),
-    ("Club sandwich",  "mains",  1200, 12),
-    ("Margherita pizza","mains", 1500, 18),
-    ("Caesar salad",   "mains",   900, 10),
-    ("Cheesecake",     "desserts",700,  5),
-    ("Ice cream",      "desserts",400,  3),
+    # (name, category, price_minor_units, prep_minutes)
+    # Ichimliklar
+    ("Espresso",           "drinks",    1500000,  3),
+    ("Cappuccino",         "drinks",    2000000,  5),
+    ("Limonad",            "drinks",    1800000,  4),
+    ("Mineral suv",        "drinks",     800000,  1),
+    ("Choy (qora)",        "drinks",     500000,  3),
+    # Nonushta
+    ("Tuxum va non",       "breakfast", 2500000,  8),
+    ("Omlet",              "breakfast", 3000000, 10),
+    ("Blinchik",           "breakfast", 2800000,  8),
+    # Asosiy taomlar
+    ("Palov",              "food",      4500000, 25),
+    ("Lag'mon",            "food",      3500000, 20),
+    ("Shashlik",           "food",      5000000, 20),
+    ("Manti",              "food",      3500000, 30),
+    ("Somsa",              "food",      1500000, 15),
+    ("Sezar salat",        "food",      3000000, 10),
+    # Gazaklar
+    ("Chips",              "snacks",    1000000,  2),
+    ("Yong'oq aralashmasi","snacks",   1500000,  2),
+    # Shirinliklar
+    ("Tiramisu",           "dessert",   3500000,  5),
+    ("Muzqaymoq",          "dessert",   2000000,  3),
+    ("Cheesecake",         "dessert",   3000000,  5),
 ]
 
 

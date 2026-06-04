@@ -40,6 +40,16 @@ class CleaningQueueRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_completed(self, limit: int = 100) -> list[CleaningQueueEntry]:
+        """Completed cleaning entries, newest first - the history view."""
+        stmt = (
+            select(CleaningQueueEntry)
+            .where(CleaningQueueEntry.status == CleaningStatus.COMPLETED.value)
+            .order_by(CleaningQueueEntry.completed_at.desc())
+            .limit(limit)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def enqueue(
         self, *, room_id: uuid.UUID, room_number: int, floor: int
     ) -> CleaningQueueEntry:

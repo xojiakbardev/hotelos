@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from src.api.dependencies import SessionDep, require_role
-from src.api.schemas.user import UserCreate, UserOut
+from src.api.schemas.user import UserCreate, UserOut, UserUpdate
 from src.core.security.hash import hash_password
 from src.domain.enums import UserRole
 from src.infra.repositories.permission_repository import PermissionRepository
@@ -55,3 +55,61 @@ async def create_user(
         role=user.role,
         is_active=user.is_active,
     )
+
+
+import uuid
+
+
+@router.put("/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: uuid.UUID,
+    payload: UserUpdate,
+    session: SessionDep,
+    _=Depends(require_role(UserRole.MANAGER)),
+) -> UserOut:
+    """Update a staff user's name, role, password, or active status."""
+    repo = UserRepository(session)
+    user = await repo.get_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    async with session.begin():
+        if payload.full_name is not None:
+            user.full_name = payload.full_name
+        if payload.role is not None:
+            user.role = payload.role
+        if payload.password is not None:
+            user.password_hash = hash_password(payload.password)
+        if payload.is_active is not None:
+            user.is_active = payload.is_active
+
+    return UserOut(
+        id=str(user.id),
+        phone=user.phone,
+        full_name=user.full_name,
+        role=user.role,
+        is_active=user.is_active,
+    )
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: uuid.UUID,
+    session: SessionDep,
+    _=Depends(require_role(UserRole.MANAGER)),
+):
+    """Soft-delete (deactivate) a staff user."""
+    repo = UserRepository(session)
+    user = await repo.get_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+    if user.role == UserRole.MANAGER:
+        managers = await repo.list_active(role=UserRole.MANAGER)
+        if len(managers) <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="cannot deactivate the last manager",
+            )
+    async with session.begin():
+        user.is_active = False
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

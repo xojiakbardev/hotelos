@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -57,6 +58,14 @@ class Room(Base):
     last_cleaned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Freshness score (0.0–1.0) — decays over time since last cleaning.
+    freshness_score: Mapped[float] = mapped_column(
+        nullable=False, server_default="1.0", default=1.0
+    )
+    # Dynamic price adjusted by freshness. Updated when room is cleaned.
+    dynamic_price_minor_units: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default="0", default=0
+    )
     last_assigned_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -87,6 +96,8 @@ class Guest(Base):
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     passport_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Logical reference to auth.users.id — no FK because cross-schema is forbidden.
+    auth_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     room_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(f"{SCHEMA}.rooms.id"),
@@ -291,3 +302,44 @@ class Reservation(Base):
     )
 
     room: Mapped[Room] = relationship()
+
+
+class CleaningRequest(Base):
+    """Guest-initiated cleaning request. Tracked separately from the
+    housekeeping queue (which is triggered by room.vacated events).
+    Guests create these from their self-service portal."""
+
+    __tablename__ = "cleaning_requests"
+    __table_args__ = {"schema": SCHEMA}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    guest_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA}.guests.id"),
+        nullable=False,
+        index=True,
+    )
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA}.rooms.id"),
+        nullable=False,
+    )
+    room_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    floor: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    priority: Mapped[str] = mapped_column(String(16), nullable=False, default="normal")
+    preferred_time: Mapped[str] = mapped_column(String(16), nullable=False, default="afternoon")
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

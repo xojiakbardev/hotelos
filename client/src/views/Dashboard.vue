@@ -1,9 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
-import PageHeader from '@/components/PageHeader.vue'
-import StatCard from '@/components/StatCard.vue'
-import StatusBadge from '@/components/StatusBadge.vue'
-import GuestsChart from '@/components/GuestsChart.vue'
+import { computed, onMounted, watch, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useWsStore } from '@/stores/ws'
 import { useRoomsStore } from '@/stores/rooms'
@@ -12,8 +8,17 @@ import { useOrdersStore } from '@/stores/orders'
 import { useMaintenanceStore } from '@/stores/maintenance'
 import { useGuestsStore } from '@/stores/guests'
 import { metricsApi, type DashboardMetrics } from '@/api/metrics'
-import { ref } from 'vue'
-import { EVENT_UZ } from '@/lib/labels'
+import { receptionApi, type DailyCount } from '@/api/reception'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Users,
+  Sparkles,
+  UtensilsCrossed,
+  Wrench,
+  TrendingUp,
+  Clock,
+} from 'lucide-vue-next'
 
 const auth = useAuthStore()
 const ws = useWsStore()
@@ -24,21 +29,21 @@ const orders = useOrdersStore()
 const maintenance = useMaintenanceStore()
 
 const metrics = ref<DashboardMetrics | null>(null)
-const canSeeRevenue = computed(() => auth.role === 'manager' || auth.role === 'reception')
+const metricsLoading = ref(true)
+const dailyStats = ref<DailyCount[]>([])
+const canSeeRevenue = computed(() => auth.role === 'manager')
 
 async function loadMetrics() {
-  if (!canSeeRevenue.value) return
-  try { metrics.value = await metricsApi.dashboard() } catch { /* dashboard tolerates a stale snapshot */ }
+  if (!canSeeRevenue.value) { metricsLoading.value = false; return }
+  try { metrics.value = await metricsApi.dashboard() } catch { /* tolerates stale */ }
+  finally { metricsLoading.value = false }
 }
 
-function money(minor: number) { return `$${(minor / 100).toFixed(2)}` }
-
-const ROLE_UZ: Record<string, string> = {
-  manager: 'Boshqaruvchi',
-  reception: 'Qabulchi',
-  technician: 'Texnik',
-  cleaner: 'Tozalovchi'
+async function loadDailyStats() {
+  try { dailyStats.value = await receptionApi.dailyGuestStats(14) } catch { /* ignore */ }
 }
+
+function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
 
 onMounted(() => {
   rooms.load()
@@ -46,6 +51,7 @@ onMounted(() => {
   if (auth.role === 'manager' || auth.role === 'reception') {
     guests.load()
     orders.load()
+    loadDailyStats()
   }
   if (auth.role === 'manager' || auth.role === 'cleaner') {
     housekeeping.load()
@@ -55,238 +61,265 @@ onMounted(() => {
   }
 })
 
-// Live reconciliation — any room/guest/order/maintenance/cleaning event
-// invalidates and refetches the relevant store.
 watch(
   () => ws.lastEvent,
   (env) => {
     const ch = env?.channel ?? ''
+    const role = auth.role
     if (ch.startsWith('rooms.') || ch.startsWith('guests.')) rooms.load()
-    if (ch.startsWith('guests.')) guests.load()
-    if (ch.startsWith('rooms.')) housekeeping.load()
-    if (ch.startsWith('orders.')) orders.load()
-    if (ch.startsWith('maintenance.')) maintenance.load()
+    if (ch.startsWith('guests.') && (role === 'manager' || role === 'reception')) { guests.load(); loadDailyStats() }
+    if (ch.startsWith('rooms.') && (role === 'manager' || role === 'cleaner')) housekeeping.load()
+    if (ch.startsWith('orders.') && (role === 'manager' || role === 'reception')) orders.load()
+    if (ch.startsWith('maintenance.') && role !== 'cleaner') maintenance.load()
     if (
-      ch.startsWith('rooms.') ||
-      ch.startsWith('guests.') ||
-      ch.startsWith('orders.') ||
-      ch.startsWith('bills.')
+      (ch.startsWith('rooms.') || ch.startsWith('guests.') ||
+       ch.startsWith('orders.') || ch.startsWith('bills.')) &&
+      canSeeRevenue.value
     ) loadMetrics()
   }
 )
 
-const greeting = computed(() => {
-  const name = auth.user?.full_name || auth.user?.phone || ''
-  return name ? `Xush kelibsiz, ${name}` : 'Xush kelibsiz'
+const roomsOccupied = computed(() => rooms.rooms.filter((r) => r.status === 'occupied').length)
+const roomsTotal = computed(() => rooms.rooms.length)
+const cleaningOpen = computed(() => housekeeping.pending.length + housekeeping.inProgress.length)
+const ordersOpen = computed(() => orders.open.length)
+const openIssues = computed(() => maintenance.open.length)
+
+// Chart computed
+const chartMax = computed(() => Math.max(1, ...dailyStats.value.map(d => d.count)))
+const chartBars = computed(() =>
+  dailyStats.value.map(d => ({
+    date: d.date,
+    count: d.count,
+    height: Math.max(4, (d.count / chartMax.value) * 100)
+  }))
+)
+
+const avgCleaningTime = computed(() => {
+  const entries = housekeeping.entries.filter(e => e.started_at && e.completed_at)
+  if (!entries.length) return '—'
+  const total = entries.reduce((sum, e) => {
+    const ms = new Date(e.completed_at!).getTime() - new Date(e.started_at!).getTime()
+    return sum + ms
+  }, 0)
+  const avgMin = Math.round(total / entries.length / 60000)
+  return avgMin > 60 ? `${Math.floor(avgMin/60)} soat ${avgMin%60} daq` : `${avgMin} daq`
 })
 
-const roomsAvailable = computed(() => rooms.available.length)
-const roomsOccupied  = computed(() => rooms.rooms.filter((r) => r.status === 'occupied').length)
-const roomsTotal     = computed(() => rooms.rooms.length)
-const cleaningOpen   = computed(() => housekeeping.pending.length + housekeeping.inProgress.length)
-const ordersOpen     = computed(() => orders.open.length)
-const openIssues     = computed(() => maintenance.open.length)
+const avgOrderTime = computed(() => {
+  const delivered = orders.orders.filter(o => o.delivered_at && o.received_at)
+  if (!delivered.length) return '—'
+  const total = delivered.reduce((sum, o) => {
+    const ms = new Date(o.delivered_at!).getTime() - new Date(o.received_at).getTime()
+    return sum + ms
+  }, 0)
+  const avgMin = Math.round(total / delivered.length / 60000)
+  return avgMin > 60 ? `${Math.floor(avgMin/60)} soat ${avgMin%60} daq` : `${avgMin} daq`
+})
 </script>
 
 <template>
-  <div class="page">
-    <PageHeader title="Boshqaruv paneli" />
+  <div class="space-y-6">
+    <!-- Top 4 stats -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <template v-if="metricsLoading || (rooms.loading && !rooms.rooms.length)">
+        <Card v-for="i in 4" :key="i">
+          <CardContent class="p-5">
+            <div class="flex items-center justify-between">
+              <div class="space-y-2">
+                <Skeleton class="h-4 w-24" />
+                <Skeleton class="h-7 w-16" />
+                <Skeleton class="h-3 w-20" />
+              </div>
+              <Skeleton class="h-10 w-10 rounded-lg" />
+            </div>
+          </CardContent>
+        </Card>
+      </template>
+      <template v-else>
+        <!-- Faol mehmonlar -->
+        <Card v-if="auth.role === 'manager' || auth.role === 'reception'">
+          <CardContent class="p-5">
+            <div class="flex items-center justify-between">
+              <div class="space-y-1">
+                <p class="text-sm text-muted-foreground">Faol mehmonlar</p>
+                <p class="text-2xl font-bold tracking-tight">{{ guests.guests.length }}</p>
+              </div>
+              <div class="h-10 w-10 rounded-lg bg-primary/10 grid place-items-center">
+                <Users class="w-5 h-5 text-primary" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-    <section v-if="canSeeRevenue && metrics" class="stats">
-      <StatCard
-        label="Bandlik darajasi"
-        :value="`${(metrics.occupancy_rate * 100).toFixed(0)}%`"
-        :hint="`${metrics.rooms_occupied} / ${metrics.rooms_total} xona band`"
-        tone="primary"
-      />
-      <StatCard
-        label="Bugungi tushum"
-        :value="money(metrics.revenue_today_minor_units)"
-        hint="Yakunlangan hisoblar"
-        tone="success"
-      />
-      <StatCard
-        label="7 kunlik tushum"
-        :value="money(metrics.revenue_week_minor_units)"
-        hint="So‘nggi 7 kun"
-      />
-    </section>
+        <!-- Tozalash -->
+        <Card v-if="auth.role === 'manager' || auth.role === 'cleaner'">
+          <CardContent class="p-5">
+            <div class="flex items-center justify-between">
+              <div class="space-y-1">
+                <p class="text-sm text-muted-foreground">Tozalash navbati</p>
+                <p class="text-2xl font-bold tracking-tight">{{ cleaningOpen }}</p>
+              </div>
+              <div class="h-10 w-10 rounded-lg bg-warning/10 grid place-items-center">
+                <Sparkles class="w-5 h-5 text-amber-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-    <section class="stats">
-      <StatCard
-        label="Bo‘sh xonalar"
-        :value="`${roomsAvailable} / ${roomsTotal}`"
-        :hint="`Band: ${roomsOccupied}`"
-        tone="success"
-      />
-      <StatCard
-        v-if="auth.role === 'manager' || auth.role === 'reception'"
-        label="Faol mehmonlar"
-        :value="guests.guests.length"
-        hint="Hozir mehmonxonada"
-        tone="primary"
-      />
-      <StatCard
-        v-if="auth.role === 'manager' || auth.role === 'cleaner'"
-        label="Tozalash navbati"
-        :value="cleaningOpen"
-        :hint="`Kutmoqda: ${housekeeping.pending.length} · Bajarilmoqda: ${housekeeping.inProgress.length}`"
-        tone="warn"
-      />
-      <StatCard
-        v-if="auth.role === 'manager' || auth.role === 'reception'"
-        label="Ochiq buyurtmalar"
-        :value="ordersOpen"
-        hint="Xona xizmati"
-        tone="primary"
-      />
-      <StatCard
-        v-if="auth.role !== 'cleaner'"
-        label="Texnik muammolar"
-        :value="openIssues"
-        hint="Ochiq holatda"
-        :tone="openIssues > 0 ? 'danger' : 'success'"
-      />
-    </section>
+        <!-- Buyurtmalar -->
+        <Card v-if="auth.role === 'manager' || auth.role === 'reception'">
+          <CardContent class="p-5">
+            <div class="flex items-center justify-between">
+              <div class="space-y-1">
+                <p class="text-sm text-muted-foreground">Ochiq buyurtmalar</p>
+                <p class="text-2xl font-bold tracking-tight">{{ ordersOpen }}</p>
+              </div>
+              <div class="h-10 w-10 rounded-lg bg-primary/10 grid place-items-center">
+                <UtensilsCrossed class="w-5 h-5 text-primary" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-    <GuestsChart :days="30" :height="200" />
+        <!-- Texnik -->
+        <Card v-if="auth.role !== 'cleaner'">
+          <CardContent class="p-5">
+            <div class="flex items-center justify-between">
+              <div class="space-y-1">
+                <p class="text-sm text-muted-foreground">Texnik muammolar</p>
+                <p class="text-2xl font-bold tracking-tight">{{ openIssues }}</p>
+              </div>
+              <div class="h-10 w-10 rounded-lg" :class="openIssues > 0 ? 'bg-destructive/10' : 'bg-success/10'">
+                <div class="h-full w-full grid place-items-center">
+                  <Wrench class="w-5 h-5" :class="openIssues > 0 ? 'text-destructive' : 'text-green-600'" />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </template>
+    </div>
 
-    <section class="grid-2">
-      <article class="card-paper events">
-        <header class="card-head">
-          <h2>Jonli oqim</h2>
-          <span class="text-caption text-muted">Oxirgi {{ ws.eventLog.length }} ta hodisa</span>
-        </header>
-        <ul v-if="ws.eventLog.length" class="event-list">
-          <li
-            v-for="(e, idx) in ws.eventLog.slice(0, 12)"
-            :key="idx"
-            class="event-row"
+    <!-- Revenue row (manager only) -->
+    <div v-if="canSeeRevenue && metrics" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <Card>
+        <CardContent class="p-5">
+          <div class="flex items-center justify-between">
+            <div class="space-y-1">
+              <p class="text-sm text-muted-foreground">Bugungi tushum</p>
+              <p class="text-2xl font-bold tracking-tight">{{ money(metrics.revenue_today_minor_units) }}</p>
+            </div>
+            <div class="h-10 w-10 rounded-lg bg-success/10 grid place-items-center">
+              <TrendingUp class="w-5 h-5 text-green-600" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent class="p-5">
+          <div class="flex items-center justify-between">
+            <div class="space-y-1">
+              <p class="text-sm text-muted-foreground">7 kunlik tushum</p>
+              <p class="text-2xl font-bold tracking-tight">{{ money(metrics.revenue_week_minor_units) }}</p>
+            </div>
+            <div class="h-10 w-10 rounded-lg bg-accent grid place-items-center">
+              <TrendingUp class="w-5 h-5 text-muted-foreground" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+
+    <!-- Guest stats chart -->
+    <Card v-if="(auth.role === 'manager' || auth.role === 'reception') && dailyStats.length">
+      <CardHeader class="pb-2">
+        <CardTitle class="text-sm font-semibold">Kunlik mehmonlar (so'nggi 14 kun)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div class="flex items-end gap-1 h-32">
+          <div
+            v-for="bar in chartBars"
+            :key="bar.date"
+            class="flex-1 flex flex-col items-center gap-1"
           >
-            <span class="event-name">{{ EVENT_UZ[e.event] || e.event }}</span>
-            <span class="text-caption text-muted mono-channel">{{ e.channel || '—' }}</span>
-            <span class="text-caption text-muted tabular">
-              {{ e.occurred_at ? new Date(e.occurred_at).toLocaleTimeString() : '' }}
-            </span>
-          </li>
-        </ul>
-        <div v-else class="empty">
-          Hodisalar hali yo‘q. Tizimda harakat boshlanganda bu yerda paydo bo‘ladi.
+            <span class="text-[9px] text-muted-foreground tabular-nums">{{ bar.count || '' }}</span>
+            <div
+              class="w-full rounded-t-sm bg-primary/80 transition-all duration-300"
+              :style="{ height: bar.height + '%' }"
+            />
+            <span class="text-[8px] text-muted-foreground">{{ bar.date.slice(8) }}</span>
+          </div>
         </div>
-      </article>
+      </CardContent>
+    </Card>
 
-      <article class="card-paper status">
-        <header class="card-head">
-          <h2>Aloqa</h2>
-          <StatusBadge :tone="ws.connected ? 'clean' : 'maintenance'" :label="ws.connected ? 'Faol' : 'Uzilgan'" />
-        </header>
-        <dl class="meta">
-          <div>
-            <dt>Rol</dt>
-            <dd>{{ ROLE_UZ[auth.role || ''] || auth.role || '—' }}</dd>
+    <!-- Performance grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Card>
+        <CardHeader class="pb-3">
+          <CardTitle class="text-sm font-semibold flex items-center gap-2">
+            <Sparkles class="w-4 h-4 text-muted-foreground" />
+            Tozalash samaradorligi
+          </CardTitle>
+        </CardHeader>
+        <CardContent class="space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-muted-foreground">O'rtacha vaqt</span>
+            <span class="text-sm font-semibold">{{ avgCleaningTime }}</span>
           </div>
-          <div>
-            <dt>Telefon</dt>
-            <dd class="tabular">{{ auth.user?.phone || '—' }}</dd>
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-muted-foreground">Navbatda</span>
+            <span class="text-sm font-semibold">{{ housekeeping.pending.length }}</span>
           </div>
-          <div>
-            <dt>Aloqa holati</dt>
-            <dd>{{ ws.connected ? 'WebSocket faol' : 'WebSocket aloqasiz' }}</dd>
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-muted-foreground">Bajarilmoqda</span>
+            <span class="text-sm font-semibold">{{ housekeeping.inProgress.length }}</span>
           </div>
-        </dl>
-      </article>
-    </section>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader class="pb-3">
+          <CardTitle class="text-sm font-semibold flex items-center gap-2">
+            <Clock class="w-4 h-4 text-muted-foreground" />
+            Xona xizmati tezligi
+          </CardTitle>
+        </CardHeader>
+        <CardContent class="space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-muted-foreground">O'rtacha yetkazish</span>
+            <span class="text-sm font-semibold">{{ avgOrderTime }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-muted-foreground">Ochiq buyurtmalar</span>
+            <span class="text-sm font-semibold">{{ orders.open.length }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-muted-foreground">Bugun yetkazildi</span>
+            <span class="text-sm font-semibold">{{ orders.delivered.length }}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader class="pb-3">
+          <CardTitle class="text-sm font-semibold flex items-center gap-2">
+            <Wrench class="w-4 h-4 text-muted-foreground" />
+            Texnik xizmat
+          </CardTitle>
+        </CardHeader>
+        <CardContent class="space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-muted-foreground">Ochiq muammolar</span>
+            <span class="text-sm font-semibold">{{ maintenance.open.length }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-muted-foreground">Tayinlangan</span>
+            <span class="text-sm font-semibold">{{ maintenance.mine.length }}</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.page { display: flex; flex-direction: column; gap: 20px; }
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-.grid-2 {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: 16px;
-}
-@media (max-width: 960px) {
-  .grid-2 { grid-template-columns: 1fr; }
-}
-
-.card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-}
-.card-head h2 {
-  font-size: var(--font-size-lg);
-  font-weight: 600;
-  color: var(--ink-800);
-}
-.events { padding: 0; }
-.status { padding: 0; }
-
-.event-list {
-  list-style: none;
-  margin: 0;
-  padding: 6px 0;
-  max-height: 360px;
-  overflow-y: auto;
-}
-.event-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 80px;
-  gap: 12px;
-  padding: 9px 20px;
-  font-size: var(--font-size-sm);
-  align-items: center;
-}
-.event-row:hover { background: var(--bg-subtle); }
-.event-name {
-  color: var(--primary-strong);
-  font-weight: 600;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-}
-
-.empty {
-  padding: 32px 20px;
-  text-align: center;
-  color: var(--muted-fg);
-  font-size: var(--font-size-sm);
-}
-
-.meta {
-  margin: 0;
-  padding: 12px 20px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.meta > div {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-.meta > div:last-child { border-bottom: none; }
-.meta dt {
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted-fg);
-  font-weight: 600;
-}
-.meta dd {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--ink-800);
-}
-</style>

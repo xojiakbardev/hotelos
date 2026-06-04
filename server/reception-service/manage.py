@@ -4,7 +4,7 @@
 Commands:
   makemigrations <message>   — alembic revision --autogenerate -m "<message>"
   migrate                    — alembic upgrade head
-  seedrooms                  — idempotently seed the 2-floor × 10-room demo inventory
+  seedguests [--count N]     — seed N fake guests into available clean rooms (uses Faker)
 """
 
 from __future__ import annotations
@@ -48,73 +48,105 @@ def migrate() -> None:
         raise click.Abort()
 
 
-# Demo inventory: 2 floors × 10 rooms = 20 rooms total.
-# Mix of types and proximities so the assignment algorithm has interesting
-# choices to make during a demo. The order matters — `last_cleaned_at` is
-# staggered by index so the "longest clean wins" tiebreaker produces
-# deterministic picks for TS-01 testing.
-_DEMO_ROOMS: list[dict] = [
-    {"number": 101, "floor": 1, "type": RoomType.SINGLE,     "proximity": Proximity.ELEVATOR, "rate_minor": 5000},
-    {"number": 102, "floor": 1, "type": RoomType.SINGLE,     "proximity": Proximity.STAIRS,   "rate_minor": 5000},
-    {"number": 103, "floor": 1, "type": RoomType.DOUBLE,     "proximity": Proximity.ELEVATOR, "rate_minor": 8000},
-    {"number": 104, "floor": 1, "type": RoomType.DOUBLE,     "proximity": Proximity.ELEVATOR, "rate_minor": 8000},
-    {"number": 105, "floor": 1, "type": RoomType.DOUBLE,     "proximity": Proximity.STAIRS,   "rate_minor": 8000},
-    {"number": 106, "floor": 1, "type": RoomType.DOUBLE,     "proximity": Proximity.STAIRS,   "rate_minor": 8000},
-    {"number": 107, "floor": 1, "type": RoomType.SUITE,      "proximity": Proximity.ELEVATOR, "rate_minor": 20000},
-    {"number": 108, "floor": 1, "type": RoomType.SUITE,      "proximity": Proximity.STAIRS,   "rate_minor": 20000},
-    {"number": 109, "floor": 1, "type": RoomType.ACCESSIBLE, "proximity": Proximity.ELEVATOR, "rate_minor": 10000},
-    {"number": 110, "floor": 1, "type": RoomType.ACCESSIBLE, "proximity": Proximity.ELEVATOR, "rate_minor": 10000},
-    {"number": 201, "floor": 2, "type": RoomType.SINGLE,     "proximity": Proximity.ELEVATOR, "rate_minor": 5500},
-    {"number": 202, "floor": 2, "type": RoomType.SINGLE,     "proximity": Proximity.STAIRS,   "rate_minor": 5500},
-    {"number": 203, "floor": 2, "type": RoomType.DOUBLE,     "proximity": Proximity.ELEVATOR, "rate_minor": 8500},
-    {"number": 204, "floor": 2, "type": RoomType.DOUBLE,     "proximity": Proximity.ELEVATOR, "rate_minor": 8500},
-    {"number": 205, "floor": 2, "type": RoomType.DOUBLE,     "proximity": Proximity.STAIRS,   "rate_minor": 8500},
-    {"number": 206, "floor": 2, "type": RoomType.DOUBLE,     "proximity": Proximity.STAIRS,   "rate_minor": 8500},
-    {"number": 207, "floor": 2, "type": RoomType.SUITE,      "proximity": Proximity.ELEVATOR, "rate_minor": 22000},
-    {"number": 208, "floor": 2, "type": RoomType.SUITE,      "proximity": Proximity.STAIRS,   "rate_minor": 22000},
-    {"number": 209, "floor": 2, "type": RoomType.ACCESSIBLE, "proximity": Proximity.ELEVATOR, "rate_minor": 10500},
-    {"number": 210, "floor": 2, "type": RoomType.ACCESSIBLE, "proximity": Proximity.ELEVATOR, "rate_minor": 10500},
-]
-
 
 @cli.command()
-def seedrooms() -> None:
-    """Insert the demo inventory. Skips rooms that already exist."""
+@click.option("--count", default=10, help="Number of fake guests to seed")
+def seedguests(count: int) -> None:
+    """Seed random guests into available clean rooms using Faker."""
+    from faker import Faker
+    import random
+    from src.domain.models import Guest, Room
+    from src.core.broker import create_redis
+    from src.events.publisher import EventPublisher
+    from src.events.topics import Channels
+    
+    fake = Faker("uz_UZ")
 
     async def _run() -> None:
-        now = datetime.now(timezone.utc)
         async with async_session_factory() as session:
-            async with session.begin():
-                existing_numbers = set(
-                    (await session.execute(select(Room.room_number))).scalars().all()
-                )
-                created = 0
-                for idx, r in enumerate(_DEMO_ROOMS):
-                    if r["number"] in existing_numbers:
-                        continue
-                    # Stagger `last_cleaned_at` backwards by minutes so the
-                    # assignment algorithm has deterministic ordering: room
-                    # 101 is "oldest clean" → wins first when type matches.
-                    last_cleaned = now - timedelta(minutes=(len(_DEMO_ROOMS) - idx))
-                    session.add(
-                        Room(
-                            room_number=r["number"],
-                            floor=r["floor"],
-                            room_type=r["type"].value,
-                            proximity=r["proximity"].value,
-                            cleanliness_status="clean",
-                            status="available",
-                            nightly_rate_minor_units=r["rate_minor"],
-                            last_cleaned_at=last_cleaned,
-                        )
+            # 1. Fetch available clean rooms
+            stmt = select(Room).where(
+                Room.status == "available",
+                Room.cleanliness_status == "clean"
+            )
+            rooms = list((await session.execute(stmt)).scalars().all())
+            
+            if not rooms:
+                click.echo("[skip] Bazada birorta ham toza va bo'sh xona topilmadi. Avval xonalarni yarating.")
+                return
+
+            # Pick min(count, len(rooms)) rooms to seed
+            target_rooms = random.sample(rooms, min(count, len(rooms)))
+            
+            # Setup publisher
+            redis_client = create_redis()
+            publisher = EventPublisher(redis_client, "reception-service")
+            
+            seeded = 0
+            for room in target_rooms:
+                async with session.begin():
+                    # Generate fake user details
+                    first_name = fake.first_name()
+                    last_name = fake.last_name()
+                    full_name = f"{first_name} {last_name}"
+                    
+                    # Generate Uz phone format: +99890XXXXXXX
+                    phone = f"+99890{random.randint(1000000, 9999999)}"
+                    passport = f"{random.choice(['AA', 'AB', 'AD', 'KA'])}{random.randint(1000000, 9999999)}"
+                    
+                    nights = random.randint(1, 5)
+                    checked_in_at = datetime.now(timezone.utc) - timedelta(hours=random.randint(1, 12))
+                    expected_checkout = checked_in_at + timedelta(days=nights)
+                    
+                    # Create guest
+                    guest = Guest(
+                        full_name=full_name,
+                        phone=phone,
+                        passport_number=passport,
+                        room_id=room.id,
+                        checked_in_at=checked_in_at,
+                        expected_checkout_at=expected_checkout,
+                        nightly_rate_locked_minor_units=room.nightly_rate_minor_units,
+                        cleaning_preference=random.choice(["morning", "afternoon", "evening"]),
+                        do_not_disturb=random.choice([True, False, False, False]),
                     )
-                    created += 1
-                click.echo(
-                    f"[ok] inserted {created} new rooms, {len(existing_numbers)} already existed"
+                    session.add(guest)
+                    
+                    # Mark room as occupied
+                    room.status = "occupied"
+                    room.last_assigned_at = checked_in_at
+                    
+                    await session.flush()
+                    
+                    guest_id = str(guest.id)
+                    room_id = str(room.id)
+                    room_number = room.room_number
+                    floor = room.floor
+                    room_type = room.room_type
+                    
+                # Publish check-in event outside transaction (after successful commit)
+                await publisher.publish(
+                    channel=Channels.GUEST_CHECKED_IN,
+                    payload={
+                        "guest_id": guest_id,
+                        "room_id": room_id,
+                        "room_number": room_number,
+                        "floor": floor,
+                        "room_type": room_type,
+                        "full_name": full_name,
+                        "checked_in_at": checked_in_at.isoformat(),
+                    },
                 )
+                seeded += 1
+                click.echo(f"[ok] room #{room_number} assigned to {full_name} ({phone})")
+
+            # Clean up redis connection
+            await redis_client.aclose()
+            click.echo(f"Seeding completed. {seeded} guests checked in.")
 
     asyncio.run(_run())
 
 
 if __name__ == "__main__":
     cli()
+

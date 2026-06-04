@@ -25,3 +25,4 @@ class CleaningEntryOut(BaseModel):
     do_not_disturb: bool = False
     cleaning_preference: str = "afternoon"
     cleaning_preference_note: str | None = None
+    photo_path: str | None = None

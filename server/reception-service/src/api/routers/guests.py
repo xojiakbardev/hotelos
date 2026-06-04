@@ -26,6 +26,7 @@ from src.api.dependencies import PublisherDep, SessionDep, require_role
 from src.api.schemas.billing import CheckOutResponse
 from src.api.schemas.guest import (
     CheckInRequest,
+    CheckInResponse,
     CleaningPreferenceRequest,
     DailyCount,
     DNDRequest,
@@ -40,6 +41,7 @@ from src.infra.repositories.guest_repository import GuestRepository
 from src.infra.repositories.order_repository import OrderRepository
 from src.infra.repositories.room_repository import RoomRepository
 from src.services.billing import compute_bill
+from src.services.credential_generator import generate_guest_pin, hash_pin
 from src.services.room_assignment import (
     AssignmentRequest,
     NoRoomsAvailable,
@@ -184,13 +186,13 @@ async def get_guest(
     )
 
 
-@router.post("/check-in", response_model=GuestOut, status_code=status.HTTP_201_CREATED)
+@router.post("/check-in", response_model=CheckInResponse, status_code=status.HTTP_201_CREATED)
 async def check_in(
     payload: CheckInRequest,
     session: SessionDep,
     publisher: PublisherDep,
     _=Depends(require_role(*CAN_CHECK_IN)),
-) -> GuestOut:
+) -> CheckInResponse:
     rooms = RoomRepository(session)
     guests = GuestRepository(session)
 
@@ -231,6 +233,12 @@ async def check_in(
                 )
             await rooms.mark_occupied(room)
             expected_checkout = datetime.now(timezone.utc) + timedelta(days=payload.nights)
+
+            # Generate guest self-service credentials
+            auth_user_id = uuid.uuid4()
+            guest_pin = generate_guest_pin()
+            pin_hash = hash_pin(guest_pin)
+
             guest = await guests.create(
                 full_name=payload.full_name,
                 phone=payload.phone,
@@ -240,6 +248,7 @@ async def check_in(
                 nightly_rate_locked_minor_units=room.nightly_rate_minor_units,
                 cleaning_preference=payload.cleaning_preference.value,
                 cleaning_preference_note=payload.cleaning_preference_note,
+                auth_user_id=auth_user_id,
             )
             # Snapshot values before the session closes — lazy attribute
             # access after commit triggers IO on an expired instance.
@@ -276,7 +285,21 @@ async def check_in(
         },
     )
 
-    return GuestOut(
+    # Publish credential event so auth-service creates the guest user
+    await publisher.publish(
+        channel=Channels.GUEST_CREDENTIAL_CREATED,
+        payload={
+            "auth_user_id": str(auth_user_id),
+            "phone": payload.phone,
+            "password_hash": pin_hash,
+            "full_name": payload.full_name,
+            "guest_id": guest_id,
+            "room_id": room_id,
+            "room_number": room_number,
+        },
+    )
+
+    return CheckInResponse(
         id=guest_id,
         full_name=payload.full_name,
         phone=payload.phone,
@@ -290,6 +313,9 @@ async def check_in(
         do_not_disturb=dnd,
         cleaning_preference=cleaning_pref,
         cleaning_preference_note=cleaning_pref_note,
+        auth_user_id=str(auth_user_id),
+        guest_pin=guest_pin,
+        guest_login=payload.phone,
     )
 
 
@@ -496,6 +522,16 @@ async def check_out(
         },
     )
 
+    # Deactivate guest self-service credentials
+    if guest.auth_user_id:
+        await publisher.publish(
+            channel=Channels.GUEST_CREDENTIAL_DEACTIVATED,
+            payload={
+                "auth_user_id": str(guest.auth_user_id),
+                "guest_id": str(guest.id),
+            },
+        )
+
     return CheckOutResponse(
         guest_id=guest.id,
         room_number=room_number,
@@ -510,3 +546,40 @@ async def check_out(
         finalized_at=finalized_at,
         checked_out_at=now,
     )
+
+
+@router.post("/{guest_id}/reset-pin")
+async def reset_guest_pin(
+    guest_id: uuid.UUID,
+    session: SessionDep,
+    publisher: PublisherDep,
+    _=Depends(require_role(*CAN_CHECK_IN)),
+) -> dict:
+    """Generate a new PIN for a guest who lost their credentials."""
+    guest = await GuestRepository(session).get(guest_id)
+    if guest is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="guest not found")
+    if guest.checked_out_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="cannot reset PIN for checked-out guest",
+        )
+    if not guest.auth_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="guest has no self-service credentials",
+        )
+
+    new_pin = generate_guest_pin()
+    pin_hash = hash_pin(new_pin)
+
+    await publisher.publish(
+        channel=Channels.GUEST_CREDENTIAL_UPDATED,
+        payload={
+            "auth_user_id": str(guest.auth_user_id),
+            "password_hash": pin_hash,
+            "guest_id": str(guest.id),
+        },
+    )
+
+    return {"new_pin": new_pin, "guest_login": guest.phone}

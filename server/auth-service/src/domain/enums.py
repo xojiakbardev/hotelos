@@ -10,6 +10,12 @@ class UserRole(str, Enum):
     RECEPTION = "reception"
     TECHNICIAN = "technician"
     CLEANER = "cleaner"
+    GUEST = "guest"
+
+    @classmethod
+    def staff_roles(cls) -> list["UserRole"]:
+        """Roles that are hotel staff (excludes guest)."""
+        return [cls.MANAGER, cls.RECEPTION, cls.TECHNICIAN, cls.CLEANER]
 
     @classmethod
     def list(cls) -> list[str]:

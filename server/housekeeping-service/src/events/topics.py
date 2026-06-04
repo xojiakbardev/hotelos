@@ -8,6 +8,7 @@ class Channels:
     ROOM_ADDED_TO_CLEANING_QUEUE = "rooms.added_to_cleaning_queue"
     ROOM_CLEANING_STARTED = "rooms.cleaning_started"
     ROOM_CLEANED = "rooms.cleaned"
+    HOUSEKEEPING_SETTINGS_CHANGED = "housekeeping.settings_changed"
     # Re-broadcast of guest DND / preference changes so the cleaner UI can
     # patch its queue card without an extra HTTP refetch. Cleaner role
     # already subscribes to `housekeeping.*` patterns.
@@ -15,6 +16,7 @@ class Channels:
 
     # Housekeeping subscribes to these:
     ROOM_VACATED = "rooms.vacated"
+    ROOM_CLEANING_REQUESTED = "rooms.cleaning_requested"
     MAINTENANCE_RESOLVED = "maintenance.resolved"
     GUEST_DND_CHANGED = "guests.dnd_changed"
     GUEST_PREFERENCES_CHANGED = "guests.preferences_changed"

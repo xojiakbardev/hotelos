@@ -1,26 +1,50 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useWsStore } from '@/stores/ws'
+import { Button } from '@/components/ui/button'
+import { Sheet, SheetTrigger, SheetContent } from '@/components/ui/sheet'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
+import {
+  LayoutDashboard,
+  DoorOpen,
+  Users,
+  CalendarCheck,
+  UtensilsCrossed,
+  Sparkles,
+  Wrench,
+  UserCog,
+  ScrollText,
+  LogOut,
+  Menu,
+  Wifi,
+  WifiOff,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const ws = useWsStore()
+const mobileOpen = ref(false)
+const sidebarCollapsed = ref(false)
 
-interface NavItem { to: string; label: string; roles: string[] }
+interface NavItem { to: string; label: string; roles: string[]; icon: any }
 
 const NAV: NavItem[] = [
-  { to: '/',              label: 'Boshqaruv paneli', roles: ['manager', 'reception', 'technician', 'cleaner'] },
-  { to: '/rooms',         label: 'Xonalar',          roles: ['manager', 'reception', 'cleaner', 'technician'] },
-  { to: '/guests',        label: 'Mehmonlar',        roles: ['manager', 'reception'] },
-  { to: '/reservations',  label: 'Bronlar',          roles: ['manager', 'reception'] },
-  { to: '/orders',        label: 'Xona xizmati',     roles: ['manager', 'reception'] },
-  { to: '/housekeeping',  label: 'Tozalash',         roles: ['manager', 'cleaner'] },
-  { to: '/maintenance',   label: 'Texnik xizmat',    roles: ['manager', 'technician', 'reception'] },
-  { to: '/staff',         label: 'Xodimlar',         roles: ['manager'] },
-  { to: '/menu',          label: 'Menyu',            roles: ['manager'] }
+  { to: '/',              label: 'Boshqaruv paneli', roles: ['manager', 'reception', 'cleaner'], icon: LayoutDashboard },
+  { to: '/rooms',         label: 'Xonalar',          roles: ['manager', 'reception', 'cleaner', 'technician'], icon: DoorOpen },
+  { to: '/guests',        label: 'Mehmonlar',        roles: ['manager', 'reception'], icon: Users },
+  { to: '/reservations',  label: 'Bronlar',          roles: ['manager', 'reception'], icon: CalendarCheck },
+  { to: '/orders',        label: 'Xona xizmati',     roles: ['manager', 'reception'], icon: UtensilsCrossed },
+  { to: '/housekeeping',  label: 'Tozalash',         roles: ['manager', 'cleaner'], icon: Sparkles },
+  { to: '/maintenance',   label: 'Texnik xizmat',    roles: ['manager', 'technician', 'reception'], icon: Wrench },
+  { to: '/staff',         label: 'Xodimlar',         roles: ['manager'], icon: UserCog },
+  { to: '/audit-logs',    label: 'Audit log',        roles: ['manager'], icon: ScrollText },
 ]
 
 const ROLE_UZ: Record<string, string> = {
@@ -37,11 +61,16 @@ const items = computed(() =>
 const currentTitle = computed(() => {
   const found = NAV.find((n) => n.to === route.path)
   if (found) return found.label
-  if (route.path.startsWith('/rooms/check-in'))    return 'Mehmonni qabul qilish'
-  if (route.path.startsWith('/orders/new'))        return 'Yangi buyurtma'
-  if (route.path.startsWith('/maintenance/report')) return 'Muammo qayd etish'
-  if (route.path.startsWith('/staff/new'))         return 'Xodim qo‘shish'
   return (route.meta.title as string) || ''
+})
+
+const userInitials = computed(() => {
+  const name = auth.user?.full_name || auth.user?.phone || ''
+  if (!name) return '?'
+  const parts = name.split(' ')
+  return parts.length > 1
+    ? (parts[0][0] + parts[1][0]).toUpperCase()
+    : name.slice(0, 2).toUpperCase()
 })
 
 function logout() {
@@ -54,203 +83,150 @@ function isActive(to: string) {
   if (to === '/') return route.path === '/'
   return route.path === to || route.path.startsWith(to + '/')
 }
+
+function navigateMobile(to: string) {
+  mobileOpen.value = false
+  router.push(to)
+}
 </script>
 
 <template>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-mark">H</span>
-        <span class="brand-name">HotelOS</span>
+  <div class="flex h-screen bg-background">
+    <!-- Desktop Sidebar -->
+    <aside
+      :class="cn(
+        'hidden md:flex flex-col border-r bg-card transition-all duration-200',
+        sidebarCollapsed ? 'w-16' : 'w-64'
+      )"
+    >
+      <!-- Brand -->
+      <div class="flex items-center gap-3 px-3 h-16 border-b" :class="sidebarCollapsed ? 'justify-center' : 'px-5'">
+        <div class="w-9 h-9 rounded-lg bg-primary text-primary-foreground grid place-items-center font-bold text-sm shadow-sm shrink-0">
+          H
+        </div>
+        <span v-if="!sidebarCollapsed" class="font-semibold text-base tracking-tight">HotelOS</span>
       </div>
 
-      <nav class="nav">
+      <!-- Nav -->
+      <nav class="flex-1 overflow-y-auto p-2 space-y-1">
         <RouterLink
-          v-for="i in items"
-          :key="i.to"
-          :to="i.to"
-          :class="['nav-item', { 'nav-item--active': isActive(i.to) }]"
+          v-for="item in items"
+          :key="item.to"
+          :to="item.to"
+          :title="sidebarCollapsed ? item.label : undefined"
+          :class="cn(
+            'flex items-center rounded-md transition-colors cursor-pointer',
+            sidebarCollapsed ? 'justify-center h-10 w-full' : 'gap-3 px-3 py-2.5 text-sm font-medium',
+            isActive(item.to)
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+          )"
         >
-          <span class="nav-bullet" aria-hidden="true" />
-          <span class="nav-label">{{ i.label }}</span>
+          <component :is="item.icon" :class="sidebarCollapsed ? 'w-5 h-5' : 'w-4 h-4'" />
+          <span v-if="!sidebarCollapsed">{{ item.label }}</span>
         </RouterLink>
       </nav>
 
-      <footer class="sidebar-foot">
-        <div class="user">
-          <div class="user-name">{{ auth.user?.full_name || auth.user?.phone || '—' }}</div>
-          <div class="user-role">{{ ROLE_UZ[auth.role || ''] || auth.role }}</div>
-        </div>
-        <button class="logout" @click="logout">Chiqish</button>
-      </footer>
+      <!-- Collapse toggle -->
+      <div class="border-t p-2">
+        <Button
+          variant="ghost"
+          :size="sidebarCollapsed ? 'icon-sm' : 'sm'"
+          :class="sidebarCollapsed ? 'w-full justify-center' : 'w-full justify-start gap-2'"
+          @click="sidebarCollapsed = !sidebarCollapsed"
+        >
+          <component :is="sidebarCollapsed ? PanelLeftOpen : PanelLeftClose" class="w-4 h-4" />
+          <span v-if="!sidebarCollapsed" class="text-xs text-muted-foreground">Yig'ish</span>
+        </Button>
+      </div>
     </aside>
 
-    <div class="main">
-      <header class="topbar">
-        <h2 class="topbar-title">{{ currentTitle }}</h2>
-        <div class="topbar-right">
-          <div class="ws" :class="{ 'ws--ok': ws.connected }">
-            <span class="ws-dot" />
-            {{ ws.connected ? 'Jonli' : 'Aloqasiz' }}
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- Top bar -->
+      <header class="h-16 border-b bg-card flex items-center justify-between px-4 md:px-6 shrink-0">
+        <div class="flex items-center gap-3">
+          <!-- Mobile menu trigger -->
+          <Sheet v-model:open="mobileOpen">
+            <SheetTrigger as-child>
+              <Button variant="ghost" size="icon-sm" class="md:hidden">
+                <Menu class="w-5 h-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" class="w-64 p-0">
+              <div class="flex items-center gap-3 px-5 h-16 border-b">
+                <div class="w-9 h-9 rounded-lg bg-primary text-primary-foreground grid place-items-center font-bold text-sm">
+                  H
+                </div>
+                <span class="font-semibold text-base tracking-tight">HotelOS</span>
+              </div>
+              <nav class="p-3 space-y-1">
+                <button
+                  v-for="item in items"
+                  :key="item.to"
+                  :class="cn(
+                    'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors w-full text-left cursor-pointer',
+                    isActive(item.to)
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  )"
+                  @click="navigateMobile(item.to)"
+                >
+                  <component :is="item.icon" class="w-4 h-4" />
+                  {{ item.label }}
+                </button>
+              </nav>
+            </SheetContent>
+          </Sheet>
+
+          <!-- WiFi indicator -->
+          <div
+            :class="cn(
+              'flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border',
+              ws.connected
+                ? 'bg-success/10 text-green-700 border-success/20'
+                : 'bg-muted text-muted-foreground border-border'
+            )"
+          >
+            <component :is="ws.connected ? Wifi : WifiOff" class="w-3 h-3" />
           </div>
+
+          <h1 class="text-base font-semibold tracking-tight">{{ currentTitle }}</h1>
+        </div>
+
+        <!-- Right: profile dropdown -->
+        <div class="flex items-center gap-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="ghost" class="flex items-center gap-2 h-auto py-1.5 px-2 cursor-pointer">
+                <Avatar class="h-8 w-8">
+                  <AvatarFallback class="text-xs bg-primary/10 text-primary">{{ userInitials }}</AvatarFallback>
+                </Avatar>
+                <div class="hidden sm:block text-left">
+                  <p class="text-sm font-medium leading-none">{{ auth.user?.full_name || auth.user?.phone || '—' }}</p>
+                  <p class="text-xs text-muted-foreground">{{ ROLE_UZ[auth.role || ''] || auth.role }}</p>
+                </div>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-48">
+              <DropdownMenuLabel>
+                <p class="font-medium">{{ auth.user?.full_name || auth.user?.phone }}</p>
+                <p class="text-xs text-muted-foreground font-normal">{{ ROLE_UZ[auth.role || ''] || auth.role }}</p>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem @click="logout" class="text-destructive focus:text-destructive">
+                <LogOut class="w-4 h-4 mr-2" />
+                Chiqish
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
-      <section class="content">
+
+      <!-- Page content -->
+      <main class="flex-1 overflow-y-auto p-4 md:p-6">
         <RouterView />
-      </section>
+      </main>
     </div>
   </div>
 </template>
-
-<style scoped>
-.shell {
-  display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
-  height: 100vh;
-  background: var(--bg);
-}
-
-.sidebar {
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 18px 20px;
-  height: var(--topbar-height);
-  border-bottom: 1px solid var(--border);
-}
-.brand-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--primary);
-  color: white;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-family: var(--font-display);
-  box-shadow: var(--primary-shadow);
-}
-.brand-name {
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.018em;
-  color: var(--ink-900);
-}
-
-.nav {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  color: var(--ink-600);
-  transition: background var(--motion-fast) var(--motion-ease),
-              color var(--motion-fast) var(--motion-ease);
-}
-.nav-item:hover {
-  background: var(--bg-subtle);
-  color: var(--foreground);
-  text-decoration: none;
-}
-.nav-item--active {
-  background: var(--primary-soft-2);
-  color: var(--primary-strong);
-}
-.nav-item--active .nav-bullet { background: var(--primary); }
-.nav-bullet {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ink-200);
-  flex: 0 0 6px;
-}
-.sidebar-foot {
-  border-top: 1px solid var(--border);
-  padding: 14px;
-}
-.user { padding: 0 4px 10px; }
-.user-name { font-size: var(--font-size-sm); font-weight: 600; color: var(--ink-800); }
-.user-role { font-size: var(--font-size-xs); color: var(--muted-fg); margin-top: 2px; }
-
-.logout {
-  width: 100%;
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
-  color: var(--ink-600);
-  font-weight: 500;
-  font-size: var(--font-size-sm);
-  border: 1px solid var(--border);
-  text-align: left;
-  transition: background var(--motion-fast) var(--motion-ease);
-}
-.logout:hover { background: var(--primary-soft-2); color: var(--primary-strong); }
-
-.main {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.topbar {
-  height: var(--topbar-height);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  flex-shrink: 0;
-}
-.topbar-title {
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  color: var(--ink-900);
-}
-.topbar-right { display: flex; align-items: center; gap: 16px; }
-
-.ws {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--font-size-xs);
-  color: var(--muted-fg);
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-}
-.ws-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
-.ws--ok {
-  background: color-mix(in srgb, var(--success) 10%, transparent);
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 22%, transparent);
-}
-.ws--ok .ws-dot { background: var(--success); }
-
-.content {
-  padding: 24px;
-  overflow: auto;
-  flex: 1;
-}
-</style>

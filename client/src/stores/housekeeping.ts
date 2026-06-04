@@ -20,8 +20,12 @@ export const useHousekeepingStore = defineStore('housekeeping', {
       try {
         this.entries = await housekeepingApi.listQueue()
       } catch (e: unknown) {
-        const err = e as { response?: { data?: { message?: string } }; message?: string }
-        this.error = err.response?.data?.message ?? err.message ?? 'failed to load queue'
+        const err = e as { response?: { status?: number; data?: { message?: string } }; message?: string }
+        if (err.response?.status === 403) {
+          this.entries = []
+        } else {
+          this.error = err.response?.data?.message ?? err.message ?? 'failed to load queue'
+        }
       } finally {
         this.loading = false
       }

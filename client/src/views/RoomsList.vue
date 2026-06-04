@@ -1,18 +1,38 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import PageHeader from '@/components/PageHeader.vue'
-import Button from '@/components/Button.vue'
-import StatCard from '@/components/StatCard.vue'
-import StatusBadge from '@/components/StatusBadge.vue'
-import Modal from '@/components/Modal.vue'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import CheckInForm from './CheckInForm.vue'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import RoomDetail from './RoomDetail.vue'
 import { receptionApi, type Proximity, type Room, type RoomType } from '@/api/reception'
 import { useRoomsStore } from '@/stores/rooms'
 import { useWsStore } from '@/stores/ws'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/composables/useOptimistic'
+import { cn } from '@/lib/utils'
+import {
+  MoreVertical,
+  Plus,
+  Layers,
+  Eye,
+  Pencil,
+  Trash2,
+  BedDouble,
+  Users,
+  Sparkles,
+  Wrench as WrenchIcon,
+  Loader2,
+} from 'lucide-vue-next'
 
 const rooms = useRoomsStore()
 const ws = useWsStore()
@@ -20,83 +40,141 @@ const auth = useAuthStore()
 const toast = useToastStore()
 
 const isManager = computed(() => auth.role === 'manager')
+const canCheckIn = computed(() => auth.role === 'manager' || auth.role === 'reception')
 
-const editor = ref<Room | 'new' | null>(null)
-const toDelete = ref<Room | null>(null)
+const editorOpen = ref(false)
+const editorMode = ref<'new' | 'edit'>('new')
+const editorRoom = ref<Room | null>(null)
 const saving = ref(false)
+
+const deleteDialogOpen = ref(false)
+const toDelete = ref<Room | null>(null)
+const deleteConfirmed = ref(false)
+const deleteWarning = ref('')
+
+const detailRoom = ref<Room | null>(null)
+const checkInOpen = ref(false)
+const checkInRoom = ref<Room | null>(null)
 
 const draft = ref({
   room_number: 0,
-  floor: 1,
+  floor: '1',
   room_type: 'double' as RoomType,
   proximity: 'elevator' as Proximity,
-  price_dollars: 50
+  price_som: 200000
 })
 
-function openEditor(target: Room | 'new') {
-  editor.value = target
-  if (target === 'new') {
-    draft.value = { room_number: 0, floor: 1, room_type: 'double', proximity: 'elevator', price_dollars: 50 }
+// Bulk create state
+const editorTab = ref<'single' | 'bulk'>('single')
+const bulkSaving = ref(false)
+const bulkFloor = ref(1)
+const bulkStart = ref(101)
+const bulkEnd = ref(110)
+const bulkStep = ref<'setup' | 'configure'>('setup')
+const bulkDefaultPrices = ref<Record<RoomType, number>>({
+  single: 200000,
+  double: 350000,
+  suite: 800000,
+  accessible: 250000,
+})
+
+interface BulkRoom {
+  room_number: number
+  room_type: RoomType | null
+  proximity: Proximity
+  price_som: number
+  exists: boolean
+}
+const bulkRooms = ref<BulkRoom[]>([])
+const bulkActiveType = ref<RoomType>('single')
+
+function generateBulkRooms() {
+  if (bulkStart.value <= 0 || bulkEnd.value < bulkStart.value) {
+    toast.error("Oraliq noto'g'ri")
+    return
+  }
+  if (bulkEnd.value - bulkStart.value > 50) {
+    toast.error("Bir martada maksimal 50 ta xona")
+    return
+  }
+  const existingNumbers = new Set(rooms.rooms.map(r => r.room_number))
+  const arr: BulkRoom[] = []
+  for (let num = bulkStart.value; num <= bulkEnd.value; num++) {
+    arr.push({
+      room_number: num,
+      room_type: null,
+      proximity: 'elevator',
+      price_som: 0,
+      exists: existingNumbers.has(num),
+    })
+  }
+  bulkRooms.value = arr
+  bulkStep.value = 'configure'
+}
+
+function assignBulkType(idx: number) {
+  const room = bulkRooms.value[idx]
+  if (room.exists) return
+  if (room.room_type === bulkActiveType.value) {
+    // Same type — un-assign
+    room.room_type = null
+    room.price_som = 0
   } else {
-    draft.value = {
-      room_number: target.room_number,
-      floor: target.floor,
-      room_type: target.room_type,
-      proximity: target.proximity,
-      price_dollars: target.nightly_rate_minor_units / 100
-    }
+    // Assign (or reassign from different type)
+    room.room_type = bulkActiveType.value
+    room.price_som = bulkDefaultPrices.value[bulkActiveType.value]
   }
 }
 
-async function saveDraft() {
-  if (!editor.value) return
-  saving.value = true
+function toggleBulkProximity(idx: number) {
+  const room = bulkRooms.value[idx]
+  if (room.exists) return
+  const cycle: Proximity[] = ['elevator', 'stairs', 'other']
+  const cur = cycle.indexOf(room.proximity)
+  room.proximity = cycle[(cur + 1) % cycle.length]
+}
+
+const PROX_SHORT: Record<string, string> = { elevator: 'Lift', stairs: 'Zina', other: 'Boshqa' }
+
+const bulkReady = computed(() => bulkRooms.value.filter(r => !r.exists && r.room_type !== null))
+const bulkUnassigned = computed(() => bulkRooms.value.filter(r => !r.exists && r.room_type === null))
+const bulkByType = computed(() => {
+  const map: Record<RoomType, BulkRoom[]> = { single: [], double: [], suite: [], accessible: [] }
+  for (const r of bulkRooms.value) {
+    if (!r.exists && r.room_type) map[r.room_type].push(r)
+  }
+  return map
+})
+
+async function saveBulk() {
+  if (!bulkReady.value.length) {
+    toast.error("Kamida bitta xonaga tur belgilang")
+    return
+  }
+  bulkSaving.value = true
   try {
-    const ratePayload = Math.round(draft.value.price_dollars * 100)
-    if (editor.value === 'new') {
-      await receptionApi.createRoom({
-        room_number: draft.value.room_number,
-        floor: draft.value.floor,
-        room_type: draft.value.room_type,
-        proximity: draft.value.proximity,
-        nightly_rate_minor_units: ratePayload
-      })
-      toast.success(`#${draft.value.room_number}-xona qo'shildi`)
-    } else {
-      await receptionApi.updateRoom(editor.value.id, {
-        floor: draft.value.floor,
-        room_type: draft.value.room_type,
-        proximity: draft.value.proximity,
-        nightly_rate_minor_units: ratePayload
-      })
-      toast.success(`Xona yangilandi`)
-    }
-    editor.value = null
+    const payload = bulkReady.value.map(r => ({
+      room_number: r.room_number,
+      floor: bulkFloor.value,
+      room_type: r.room_type!,
+      proximity: r.proximity,
+      nightly_rate_minor_units: Math.round(r.price_som * 100)
+    }))
+    await receptionApi.createRoomsBulk({ rooms: payload })
+    toast.success(`${payload.length} ta xona muvaffaqiyatli qo'shildi`)
+    editorOpen.value = false
+    bulkStep.value = 'setup'
+    bulkRooms.value = []
     await rooms.load()
   } catch (e: unknown) {
     toast.error(parseApiError(e))
   } finally {
-    saving.value = false
+    bulkSaving.value = false
   }
 }
 
-async function confirmDelete() {
-  if (!toDelete.value) return
-  try {
-    await receptionApi.deleteRoom(toDelete.value.id)
-    toast.info('Xona o‘chirildi')
-    await rooms.load()
-  } catch (e) { toast.error(parseApiError(e)) }
-  finally { toDelete.value = null }
-}
-
-const filterStatus = ref<string>('all')
-const filterType = ref<string>('all')
-
-// `checkInRoom` = a specific room the user clicked; `null` means "open
-// the modal in algorithm mode" (no room targeted).
-const checkInOpen = ref(false)
-const checkInRoom = ref<Room | null>(null)
+const filterStatus = ref('all')
+const filterType = ref('all')
 
 const TYPE_UZ: Record<string, string> = {
   single: 'Bir kishilik',
@@ -104,9 +182,18 @@ const TYPE_UZ: Record<string, string> = {
   suite: 'Lyuks',
   accessible: 'Nogironlar uchun'
 }
-const PROXIMITY_UZ: Record<string, string> = {
-  elevator: 'Lift yonida',
-  stairs: 'Zinapoya yonida'
+
+const STATUS_UZ: Record<string, string> = {
+  available: "Bo'sh",
+  occupied: 'Band',
+  out_of_service: 'Xizmatdan tashqari'
+}
+
+const CLEANLINESS_UZ: Record<string, string> = {
+  clean: 'Toza',
+  dirty: 'Iflos',
+  cleaning: 'Tozalanmoqda',
+  maintenance: 'Texnik xizmat'
 }
 
 const visible = computed(() =>
@@ -136,22 +223,113 @@ watch(
   }
 )
 
-const canCheckIn = computed(() => auth.role === 'manager' || auth.role === 'reception')
-
 function isAssignable(r: Room) {
   return r.status === 'available' && r.cleanliness_status === 'clean'
 }
 
-function money(minor: number) { return `$${(minor / 100).toFixed(2)}` }
+function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
 
-function openTopButton() {
-  checkInRoom.value = null
+function statusVariant(status: string): 'success' | 'default' | 'destructive' | 'warning' | 'secondary' {
+  if (status === 'available' || status === 'clean') return 'success'
+  if (status === 'occupied') return 'default'
+  if (status === 'maintenance' || status === 'out_of_service') return 'destructive'
+  if (status === 'dirty' || status === 'cleaning') return 'warning'
+  return 'secondary'
+}
+
+function openEditor(target: Room | 'new') {
+  if (target === 'new') {
+    editorMode.value = 'new'
+    editorRoom.value = null
+    editorTab.value = 'single'
+    bulkStep.value = 'setup'
+    bulkRooms.value = []
+    draft.value = { room_number: 0, floor: '1', room_type: 'double', proximity: 'elevator', price_som: 200000 }
+  } else {
+    editorMode.value = 'edit'
+    editorRoom.value = target
+    draft.value = {
+      room_number: target.room_number,
+      floor: String(target.floor),
+      room_type: target.room_type,
+      proximity: target.proximity,
+      price_som: target.nightly_rate_minor_units / 100
+    }
+  }
+  editorOpen.value = true
+}
+
+async function saveDraft() {
+  saving.value = true
+  try {
+    const ratePayload = Math.round(draft.value.price_som * 100)
+    if (editorMode.value === 'new') {
+      await receptionApi.createRoom({
+        room_number: draft.value.room_number,
+        floor: Number(draft.value.floor),
+        room_type: draft.value.room_type,
+        proximity: draft.value.proximity,
+        nightly_rate_minor_units: ratePayload
+      })
+      toast.success(`#${draft.value.room_number}-xona qo'shildi`)
+    } else if (editorRoom.value) {
+      await receptionApi.updateRoom(editorRoom.value.id, {
+        floor: Number(draft.value.floor),
+        room_type: draft.value.room_type,
+        proximity: draft.value.proximity,
+        nightly_rate_minor_units: ratePayload
+      })
+      toast.success('Xona yangilandi')
+    }
+    editorOpen.value = false
+    await rooms.load()
+  } catch (e: unknown) {
+    toast.error(parseApiError(e))
+  } finally {
+    saving.value = false
+  }
+}
+
+function askDelete(r: Room) {
+  toDelete.value = r
+  deleteConfirmed.value = false
+  deleteWarning.value = ''
+  deleteDialogOpen.value = true
+}
+
+async function confirmDelete() {
+  if (!toDelete.value) return
+  try {
+    await receptionApi.deleteRoom(toDelete.value.id, deleteConfirmed.value)
+    toast.info("Xona o'chirildi")
+    deleteDialogOpen.value = false
+    await rooms.load()
+    deleteConfirmed.value = false
+    deleteWarning.value = ''
+  } catch (e: any) {
+    const detail = e?.response?.data
+    if (detail?.requires_confirmation && !deleteConfirmed.value) {
+      deleteWarning.value = detail.message
+      deleteConfirmed.value = true
+      return
+    }
+    toast.error(parseApiError(e))
+    deleteDialogOpen.value = false
+    deleteConfirmed.value = false
+    deleteWarning.value = ''
+  } finally {
+    if (!deleteConfirmed.value) toDelete.value = null
+  }
+}
+
+function openCheckInForRoom(r: Room) {
+  if (!canCheckIn.value || !isAssignable(r)) return
+  checkInRoom.value = r
   checkInOpen.value = true
 }
 
-function openForRoom(r: Room) {
-  if (!canCheckIn.value || !isAssignable(r)) return
-  checkInRoom.value = r
+function openCheckInGeneral() {
+  checkInRoom.value = null
   checkInOpen.value = true
 }
 
@@ -163,247 +341,516 @@ function onCheckInSuccess() {
 </script>
 
 <template>
-  <div class="page">
-    <PageHeader title="Xonalar">
-      <template #actions>
-        <Button v-if="isManager" variant="ghost" size="md" @click="openEditor('new')">+ Xona qo‘shish</Button>
-        <Button v-if="canCheckIn" variant="primary" size="md" @click="openTopButton">
-          Mehmonni qabul qilish
-        </Button>
+  <div class="space-y-6">
+    <!-- Stat cards -->
+    <div class="grid grid-cols-5 gap-3">
+      <template v-if="rooms.loading && !rooms.rooms.length">
+        <Card v-for="i in 5" :key="i">
+          <CardContent class="p-3 text-center space-y-1">
+            <Skeleton class="h-6 w-8 mx-auto" />
+            <Skeleton class="h-3 w-14 mx-auto" />
+          </CardContent>
+        </Card>
       </template>
-    </PageHeader>
-
-    <section class="stats">
-      <StatCard label="Jami" :value="counts.total" hint="Inventar" />
-      <StatCard label="Bo‘sh" :value="counts.available" hint="Toza va band emas" tone="success" />
-      <StatCard label="Band" :value="counts.occupied" hint="Mehmon bilan" tone="primary" />
-      <StatCard label="Tozalanmoqda" :value="counts.cleaning" hint="Tozalash navbati" tone="warn" />
-      <StatCard label="Texnik xizmatda" :value="counts.maintenance" hint="Muammo ko‘rsatildi" tone="danger" />
-    </section>
-
-    <section class="filters card-paper">
-      <label class="field inline">
-        <span>Holat</span>
-        <select v-model="filterStatus" class="select">
-          <option value="all">Hammasi</option>
-          <option value="available">Bo‘sh</option>
-          <option value="occupied">Band</option>
-          <option value="out_of_service">Xizmatdan tashqari</option>
-        </select>
-      </label>
-      <label class="field inline">
-        <span>Turi</span>
-        <select v-model="filterType" class="select">
-          <option value="all">Hammasi</option>
-          <option value="single">Bir kishilik</option>
-          <option value="double">Ikki kishilik</option>
-          <option value="suite">Lyuks</option>
-          <option value="accessible">Nogironlar uchun</option>
-        </select>
-      </label>
-    </section>
-
-    <section v-if="rooms.error" class="error">{{ rooms.error }}</section>
-    <section v-if="rooms.loading && !rooms.rooms.length" class="empty card-paper">Xonalar yuklanmoqda…</section>
-    <section v-else-if="!visible.length" class="empty card-paper">Filtrlarga mos xona topilmadi.</section>
-
-    <div v-else class="grid">
-      <article
-        v-for="r in visible"
-        :key="r.id"
-        :class="['card-paper', 'room', { 'room--clickable': canCheckIn && isAssignable(r) }]"
-        :role="canCheckIn && isAssignable(r) ? 'button' : undefined"
-        :tabindex="canCheckIn && isAssignable(r) ? 0 : undefined"
-        @click="openForRoom(r)"
-        @keydown.enter="openForRoom(r)"
-        @keydown.space.prevent="openForRoom(r)"
-      >
-        <header class="room-head">
-          <div class="num-block">
-            <span class="num">#{{ r.room_number }}</span>
-            <span class="floor">{{ r.floor }}-qavat</span>
-          </div>
-          <StatusBadge :tone="r.status" />
-        </header>
-        <div class="room-meta">
-          <div class="meta-row"><span class="text-muted text-caption">Turi</span><span>{{ TYPE_UZ[r.room_type] || r.room_type }}</span></div>
-          <div class="meta-row"><span class="text-muted text-caption">Tozalik</span><StatusBadge :tone="r.cleanliness_status" /></div>
-          <div class="meta-row"><span class="text-muted text-caption">Joylashuv</span><span class="text-muted">{{ PROXIMITY_UZ[r.proximity] || r.proximity }}</span></div>
-          <div class="meta-row"><span class="text-muted text-caption">Tunlik narx</span><span class="tabular">{{ money(r.nightly_rate_minor_units) }}</span></div>
-        </div>
-        <footer class="room-foot">
-          <span class="text-muted text-caption">
-            Oxirgi tozalash: {{ new Date(r.last_cleaned_at).toLocaleString('uz-UZ') }}
-          </span>
-          <span v-if="canCheckIn && isAssignable(r)" class="cta">Mehmon qabul qilish →</span>
-        </footer>
-        <div v-if="isManager" class="admin-actions" @click.stop>
-          <Button variant="ghost" size="sm" @click="openEditor(r)">Tahrirlash</Button>
-          <Button variant="ghost" size="sm" @click="toDelete = r">O‘chirish</Button>
-        </div>
-      </article>
+      <template v-else>
+        <Card>
+          <CardContent class="p-3 text-center">
+            <p class="text-xl font-bold">{{ counts.total }}</p>
+            <p class="text-[11px] text-muted-foreground">Jami</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent class="p-3 text-center">
+            <p class="text-xl font-bold text-green-600">{{ counts.available }}</p>
+            <p class="text-[11px] text-muted-foreground">Bo'sh</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent class="p-3 text-center">
+            <p class="text-xl font-bold text-primary">{{ counts.occupied }}</p>
+            <p class="text-[11px] text-muted-foreground">Band</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent class="p-3 text-center">
+            <p class="text-xl font-bold text-amber-600">{{ counts.cleaning }}</p>
+            <p class="text-[11px] text-muted-foreground">Tozalanmoqda</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent class="p-3 text-center">
+            <p class="text-xl font-bold text-destructive">{{ counts.maintenance }}</p>
+            <p class="text-[11px] text-muted-foreground">Texnik xizmatda</p>
+          </CardContent>
+        </Card>
+      </template>
     </div>
 
-    <Modal
-      :open="checkInOpen"
-      :title="checkInRoom
-        ? `#${checkInRoom.room_number}-xonaga mehmon qabul qilish`
-        : 'Mehmonni qabul qilish'"
-      size="lg"
-      @close="checkInOpen = false"
-    >
-      <CheckInForm
-        :room="checkInRoom"
-        @cancel="checkInOpen = false"
-        @success="onCheckInSuccess"
-      />
-    </Modal>
+    <!-- Filters + actions -->
+    <Card>
+      <CardContent class="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div class="flex gap-3">
+          <Select v-model="filterStatus">
+            <SelectTrigger class="w-[160px]">
+              <SelectValue placeholder="Holat" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Barcha holatlar</SelectItem>
+              <SelectItem value="available">Bo'sh</SelectItem>
+              <SelectItem value="occupied">Band</SelectItem>
+              <SelectItem value="out_of_service">Xizmatdan tashqari</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select v-model="filterType">
+            <SelectTrigger class="w-[160px]">
+              <SelectValue placeholder="Turi" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Barcha turlar</SelectItem>
+              <SelectItem value="single">Bir kishilik</SelectItem>
+              <SelectItem value="double">Ikki kishilik</SelectItem>
+              <SelectItem value="suite">Lyuks</SelectItem>
+              <SelectItem value="accessible">Nogironlar uchun</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div class="flex gap-2">
+          <Button v-if="isManager" variant="outline" size="sm" @click="openEditor('new')">
+            <Plus class="w-4 h-4 mr-1" />
+            Xona qo'shish
+          </Button>
+          <Button v-if="canCheckIn" size="sm" @click="openCheckInGeneral">
+            <Users class="w-4 h-4 mr-1" />
+            Band qilish
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
 
-    <Modal :open="editor !== null" :title="editor === 'new' ? 'Yangi xona' : 'Xonani tahrirlash'" size="md" @close="editor = null">
-      <form class="admin-form" @submit.prevent="saveDraft">
-        <label v-if="editor === 'new'" class="field">
-          <span>Xona raqami</span>
-          <input v-model.number="draft.room_number" class="input" type="number" min="1" max="9999" required />
-        </label>
-        <div class="row">
-          <label class="field"><span>Qavat</span>
-            <select v-model.number="draft.floor" class="select" required>
-              <option :value="1">1-qavat</option>
-              <option :value="2">2-qavat</option>
-            </select>
-          </label>
-          <label class="field"><span>Tunlik narx ($)</span>
-            <input v-model.number="draft.price_dollars" class="input" type="number" min="1" step="1" required />
-          </label>
-        </div>
-        <div class="row">
-          <label class="field"><span>Turi</span>
-            <select v-model="draft.room_type" class="select">
-              <option value="single">Bir kishilik</option>
-              <option value="double">Ikki kishilik</option>
-              <option value="suite">Lyuks</option>
-              <option value="accessible">Nogironlar uchun</option>
-            </select>
-          </label>
-          <label class="field"><span>Joylashuv</span>
-            <select v-model="draft.proximity" class="select">
-              <option value="elevator">Lift yonida</option>
-              <option value="stairs">Zinapoya yonida</option>
-            </select>
-          </label>
-        </div>
-        <div class="row-foot">
-          <Button variant="ghost" type="button" :disabled="saving" @click="editor = null">Bekor qilish</Button>
-          <Button type="submit" variant="primary" :loading="saving">Saqlash</Button>
-        </div>
-      </form>
-    </Modal>
+    <!-- Loading / error states -->
+    <div v-if="rooms.error" class="rounded-md bg-destructive/10 text-destructive text-sm p-4">
+      {{ rooms.error }}
+    </div>
+    <div v-if="rooms.loading && !rooms.rooms.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <Card v-for="i in 8" :key="i">
+        <CardContent class="p-4 space-y-3">
+          <div class="flex items-start justify-between">
+            <div class="space-y-2">
+              <Skeleton class="h-6 w-16" />
+              <Skeleton class="h-4 w-24" />
+            </div>
+            <Skeleton class="h-5 w-12 rounded-full" />
+          </div>
+          <div class="flex gap-1.5">
+            <Skeleton class="h-5 w-10 rounded-full" />
+            <Skeleton class="h-5 w-20 rounded-full" />
+            <Skeleton class="h-5 w-14 rounded-full" />
+          </div>
+          <Skeleton class="h-1.5 w-full rounded-full" />
+        </CardContent>
+      </Card>
+    </div>
+    <div v-else-if="!visible.length" class="text-center py-12 text-muted-foreground">
+      Filtrlarga mos xona topilmadi.
+    </div>
 
-    <ConfirmDialog
-      :open="toDelete !== null"
-      :title="toDelete ? `#${toDelete.room_number}-xona o‘chirilsinmi?` : ''"
-      message="Mehmonlar tarixiga bog‘langan xonalar o‘chirib bo‘lmaydi."
-      confirm-label="O‘chirish"
-      cancel-label="Bekor qilish"
-      tone="destructive"
-      @cancel="toDelete = null"
-      @confirm="confirmDelete"
-    />
+    <!-- Room cards grid -->
+    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <Card
+        v-for="r in visible"
+        :key="r.id"
+        :class="cn(
+          'transition-all duration-200',
+          canCheckIn && isAssignable(r) && 'cursor-pointer hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5'
+        )"
+        @click="openCheckInForRoom(r)"
+      >
+        <CardContent class="p-4 space-y-3">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xl font-bold tracking-tight">#{{ r.room_number }}</p>
+              <p class="text-sm text-muted-foreground tabular-nums">{{ money(r.dynamic_price_minor_units || r.nightly_rate_minor_units) }}/tun</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <Badge :variant="statusVariant(r.status)">{{ STATUS_UZ[r.status] || r.status }}</Badge>
+              <DropdownMenu v-if="isManager">
+                <DropdownMenuTrigger as-child>
+                  <Button variant="ghost" size="icon-sm" @click.stop>
+                    <MoreVertical class="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem @click.stop="detailRoom = r">
+                    <Eye class="w-4 h-4 mr-2" />
+                    Batafsil
+                  </DropdownMenuItem>
+                  <DropdownMenuItem @click.stop="openEditor(r)">
+                    <Pencil class="w-4 h-4 mr-2" />
+                    Tahrirlash
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem class="text-destructive focus:text-destructive" @click.stop="askDelete(r)">
+                    <Trash2 class="w-4 h-4 mr-2" />
+                    O'chirish
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <Badge variant="secondary" class="text-xs">{{ r.floor }}q</Badge>
+            <Badge variant="secondary" class="text-xs">{{ TYPE_UZ[r.room_type] || r.room_type }}</Badge>
+            <Badge :variant="statusVariant(r.cleanliness_status)" class="text-xs">{{ CLEANLINESS_UZ[r.cleanliness_status] || r.cleanliness_status }}</Badge>
+          </div>
+          <!-- Freshness bar -->
+          <div class="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              class="h-full rounded-full transition-all"
+              :class="r.freshness_score > 0.6 ? 'bg-green-500' : r.freshness_score > 0.3 ? 'bg-amber-400' : 'bg-red-500'"
+              :style="{ width: (r.freshness_score * 100) + '%' }"
+            />
+          </div>
+          <p v-if="canCheckIn && isAssignable(r)" class="text-xs font-medium text-primary">
+            Mehmon qabul qilish →
+          </p>
+          <p v-else-if="r.status === 'occupied'" class="text-xs font-medium text-amber-600">
+            Band
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+
+    <!-- Editor Dialog -->
+    <Dialog :open="editorOpen" @update:open="editorOpen = $event">
+      <DialogContent :class="editorMode === 'new' && editorTab === 'bulk' ? 'sm:max-w-3xl max-h-[90vh] overflow-y-auto' : 'sm:max-w-lg'">
+        <DialogHeader>
+          <DialogTitle>{{ editorMode === 'edit' ? 'Xonani tahrirlash' : 'Xona qo\'shish' }}</DialogTitle>
+        </DialogHeader>
+
+        <!-- Edit mode — no tabs -->
+        <form v-if="editorMode === 'edit'" @submit.prevent="saveDraft" class="space-y-4">
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <Label>Qavat</Label>
+              <Select v-model="draft.floor">
+                <SelectTrigger>
+                  <SelectValue placeholder="Qavat" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1-qavat</SelectItem>
+                  <SelectItem value="2">2-qavat</SelectItem>
+                  <SelectItem value="3">3-qavat</SelectItem>
+                  <SelectItem value="4">4-qavat</SelectItem>
+                  <SelectItem value="5">5-qavat</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-2">
+              <Label>Tunlik narx (so'm)</Label>
+              <Input v-model.number="draft.price_som" type="number" min="1" required />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <Label>Turi</Label>
+              <Select v-model="draft.room_type">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">Bir kishilik</SelectItem>
+                  <SelectItem value="double">Ikki kishilik</SelectItem>
+                  <SelectItem value="suite">Lyuks</SelectItem>
+                  <SelectItem value="accessible">Nogironlar uchun</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-2">
+              <Label>Joylashuv</Label>
+              <Select v-model="draft.proximity">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="elevator">Lift yonida</SelectItem>
+                  <SelectItem value="stairs">Zinapoya yonida</SelectItem>
+                  <SelectItem value="other">Boshqa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" type="button" @click="editorOpen = false" :disabled="saving">Bekor</Button>
+            <Button type="submit" :disabled="saving">
+              <Loader2 v-if="saving" class="w-4 h-4 mr-2 animate-spin" />
+              Saqlash
+            </Button>
+          </DialogFooter>
+        </form>
+
+        <!-- New mode — tabs: bitta / ko'p -->
+        <Tabs v-else v-model="editorTab" class="mt-2">
+          <TabsList class="w-full">
+            <TabsTrigger value="single" class="flex-1">Bitta xona</TabsTrigger>
+            <TabsTrigger value="bulk" class="flex-1">Ko'p xona</TabsTrigger>
+          </TabsList>
+
+          <!-- Single room tab -->
+          <TabsContent value="single">
+            <form @submit.prevent="saveDraft" class="space-y-4 pt-2">
+              <div class="space-y-2">
+                <Label>Xona raqami</Label>
+                <Input v-model.number="draft.room_number" type="number" min="1" max="9999" required />
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <Label>Qavat</Label>
+                  <Select v-model="draft.floor">
+                    <SelectTrigger><SelectValue placeholder="Qavat" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1-qavat</SelectItem>
+                      <SelectItem value="2">2-qavat</SelectItem>
+                      <SelectItem value="3">3-qavat</SelectItem>
+                      <SelectItem value="4">4-qavat</SelectItem>
+                      <SelectItem value="5">5-qavat</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div class="space-y-2">
+                  <Label>Tunlik narx (so'm)</Label>
+                  <Input v-model.number="draft.price_som" type="number" min="1" required />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <Label>Turi</Label>
+                  <Select v-model="draft.room_type">
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="single">Bir kishilik</SelectItem>
+                      <SelectItem value="double">Ikki kishilik</SelectItem>
+                      <SelectItem value="suite">Lyuks</SelectItem>
+                      <SelectItem value="accessible">Nogironlar uchun</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div class="space-y-2">
+                  <Label>Joylashuv</Label>
+                  <Select v-model="draft.proximity">
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="elevator">Lift yonida</SelectItem>
+                      <SelectItem value="stairs">Zinapoya yonida</SelectItem>
+                      <SelectItem value="other">Boshqa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" type="button" @click="editorOpen = false" :disabled="saving">Bekor</Button>
+                <Button type="submit" :disabled="saving">
+                  <Loader2 v-if="saving" class="w-4 h-4 mr-2 animate-spin" />
+                  Qo'shish
+                </Button>
+              </DialogFooter>
+            </form>
+          </TabsContent>
+
+          <!-- Bulk room tab -->
+          <TabsContent value="bulk">
+            <!-- Step 1: Setup range + default prices -->
+            <div v-if="bulkStep === 'setup'" class="space-y-4 pt-2">
+              <div class="grid grid-cols-3 gap-3">
+                <div class="space-y-2">
+                  <Label>Qavat</Label>
+                  <Input v-model.number="bulkFloor" type="number" min="1" max="99" required />
+                </div>
+                <div class="space-y-2">
+                  <Label>Dan (raqam)</Label>
+                  <Input v-model.number="bulkStart" type="number" min="1" max="9999" required />
+                </div>
+                <div class="space-y-2">
+                  <Label>Gacha (raqam)</Label>
+                  <Input v-model.number="bulkEnd" type="number" min="1" max="9999" required />
+                </div>
+              </div>
+
+              <div class="border-t pt-3 space-y-3">
+                <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Default narxlar (so'm/tun)</p>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <Label class="text-xs">Bir kishilik</Label>
+                    <Input v-model.number="bulkDefaultPrices.single" type="number" min="1" />
+                  </div>
+                  <div class="space-y-1">
+                    <Label class="text-xs">Ikki kishilik</Label>
+                    <Input v-model.number="bulkDefaultPrices.double" type="number" min="1" />
+                  </div>
+                  <div class="space-y-1">
+                    <Label class="text-xs">Lyuks</Label>
+                    <Input v-model.number="bulkDefaultPrices.suite" type="number" min="1" />
+                  </div>
+                  <div class="space-y-1">
+                    <Label class="text-xs">Nogironlar uchun</Label>
+                    <Input v-model.number="bulkDefaultPrices.accessible" type="number" min="1" />
+                  </div>
+                </div>
+              </div>
+
+              <p class="text-xs text-muted-foreground">
+                {{ bulkEnd >= bulkStart ? `${bulkEnd - bulkStart + 1} ta xona generatsiya qilinadi` : "Oraliq noto'g'ri" }}
+              </p>
+              <DialogFooter>
+                <Button variant="outline" type="button" @click="editorOpen = false">Bekor</Button>
+                <Button :disabled="bulkEnd < bulkStart" @click="generateBulkRooms">
+                  Keyingi →
+                </Button>
+              </DialogFooter>
+            </div>
+
+            <!-- Step 2: Configure rooms with type tabs -->
+            <div v-else class="space-y-4 pt-2">
+              <div class="flex items-center justify-between">
+                <Button variant="ghost" size="sm" @click="bulkStep = 'setup'">← Orqaga</Button>
+                <span class="text-xs text-muted-foreground">{{ bulkFloor }}-qavat · {{ bulkRooms.filter(r => !r.exists).length }} yangi</span>
+              </div>
+
+              <!-- Type tabs at top -->
+              <Tabs v-model="bulkActiveType">
+                <TabsList class="w-full">
+                  <TabsTrigger value="single" class="flex-1 text-xs gap-1">
+                    Bir kishilik
+                    <Badge variant="secondary" class="text-[10px] px-1">{{ bulkByType.single.length }}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="double" class="flex-1 text-xs gap-1">
+                    Ikki kishilik
+                    <Badge variant="secondary" class="text-[10px] px-1">{{ bulkByType.double.length }}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="suite" class="flex-1 text-xs gap-1">
+                    Lyuks
+                    <Badge variant="secondary" class="text-[10px] px-1">{{ bulkByType.suite.length }}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="accessible" class="flex-1 text-xs gap-1">
+                    Nogironlar
+                    <Badge variant="secondary" class="text-[10px] px-1">{{ bulkByType.accessible.length }}</Badge>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              <!-- Rooms grid -->
+              <div class="max-h-72 overflow-y-auto border rounded-lg p-3">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  <div
+                    v-for="(room, idx) in bulkRooms"
+                    :key="room.room_number"
+                    :class="cn(
+                      'border rounded-lg p-2.5 transition-all',
+                      room.exists
+                        ? 'bg-muted/60 opacity-40'
+                        : room.room_type === 'single' ? 'border-blue-300 bg-blue-50/50'
+                        : room.room_type === 'double' ? 'border-green-300 bg-green-50/50'
+                        : room.room_type === 'suite' ? 'border-purple-300 bg-purple-50/50'
+                        : room.room_type === 'accessible' ? 'border-amber-300 bg-amber-50/50'
+                        : 'border-dashed'
+                    )"
+                  >
+                    <template v-if="room.exists">
+                      <div class="flex items-center justify-between">
+                        <span class="text-sm font-bold">#{{ room.room_number }}</span>
+                        <span class="text-[10px] text-muted-foreground">Mavjud</span>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <!-- Row 1: number + proximity (clickable text) -->
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-sm font-bold">#{{ room.room_number }}</span>
+                        <button
+                          type="button"
+                          class="text-[10px] font-medium text-primary hover:underline cursor-pointer"
+                          @click="toggleBulkProximity(idx)"
+                        >{{ PROX_SHORT[room.proximity] }}</button>
+                      </div>
+                      <!-- Row 2: price input -->
+                      <input
+                        v-model.number="room.price_som"
+                        type="number"
+                        min="1"
+                        class="w-full text-xs border rounded px-2 py-1 mb-1.5 bg-background focus:outline-none focus:ring-1 focus:ring-ring tabular-nums"
+                      />
+                      <!-- Row 3: select button -->
+                      <button
+                        type="button"
+                        :class="cn(
+                          'w-full text-[10px] font-medium py-1 rounded border transition-colors cursor-pointer',
+                          room.room_type
+                            ? room.room_type === bulkActiveType
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : room.room_type === 'single' ? 'bg-blue-100 text-blue-700 border-blue-300'
+                              : room.room_type === 'double' ? 'bg-green-100 text-green-700 border-green-300'
+                              : room.room_type === 'suite' ? 'bg-purple-100 text-purple-700 border-purple-300'
+                              : 'bg-amber-100 text-amber-700 border-amber-300'
+                            : 'bg-background hover:bg-muted border-border'
+                        )"
+                        @click="assignBulkType(idx)"
+                      >
+                        {{ room.room_type ? TYPE_UZ[room.room_type] : 'Tanlash' }}
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Status -->
+              <div class="flex items-center justify-between text-xs">
+                <span v-if="bulkUnassigned.length" class="text-amber-600 font-medium">
+                  {{ bulkUnassigned.length }} ta belgilanmagan
+                </span>
+                <span v-else class="text-green-600 font-medium">Hammasi tayyor</span>
+                <span class="text-muted-foreground">Qo'shiladi: {{ bulkReady.length }}</span>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" @click="editorOpen = false; bulkStep = 'setup'; bulkRooms = []" :disabled="bulkSaving">Bekor</Button>
+                <Button :disabled="bulkSaving || !bulkReady.length" @click="saveBulk">
+                  <Loader2 v-if="bulkSaving" class="w-4 h-4 mr-2 animate-spin" />
+                  {{ bulkReady.length }} ta qo'shish
+                </Button>
+              </DialogFooter>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Delete Dialog -->
+    <Dialog :open="deleteDialogOpen" @update:open="deleteDialogOpen = $event">
+      <DialogContent class="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{{ deleteConfirmed ? 'Tasdiqlaysizmi?' : `#${toDelete?.room_number}-xona o'chirilsinmi?` }}</DialogTitle>
+          <p class="text-sm text-muted-foreground">{{ deleteWarning || "Bu amalni bekor qilib bo'lmaydi." }}</p>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" @click="deleteDialogOpen = false; deleteConfirmed = false; deleteWarning = ''">Bekor qilish</Button>
+          <Button variant="destructive" @click="confirmDelete">
+            {{ deleteConfirmed ? "Ha, o'chirish" : "O'chirish" }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Check-in Dialog -->
+    <Dialog :open="checkInOpen" @update:open="(v: boolean) => { if (!v) { checkInOpen = false; checkInRoom = null } }">
+      <DialogContent class="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>
+            {{ checkInRoom ? `#${checkInRoom.room_number}-xonaga mehmon qabul qilish` : 'Mehmonni qabul qilish' }}
+          </DialogTitle>
+        </DialogHeader>
+        <CheckInForm
+          :room="checkInRoom"
+          @cancel="checkInOpen = false; checkInRoom = null"
+          @success="onCheckInSuccess"
+        />
+      </DialogContent>
+    </Dialog>
+
+    <!-- Room Detail Dialog -->
+    <RoomDetail :room="detailRoom" :open="detailRoom !== null" @close="detailRoom = null" />
   </div>
 </template>
-
-<style scoped>
-.page { display: flex; flex-direction: column; gap: 16px; }
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
-}
-
-.filters {
-  display: flex;
-  gap: 16px;
-  padding: 14px 18px;
-}
-.field.inline { flex-direction: row; align-items: center; gap: 10px; min-width: 240px; }
-.field.inline > span:first-child {
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted-fg);
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.field.inline .select { min-width: 160px; }
-
-.error {
-  padding: 14px;
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
-  border-radius: var(--radius-md);
-}
-.empty { padding: 48px; text-align: center; color: var(--muted-fg); }
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 14px;
-}
-
-.room {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  transition: box-shadow var(--motion-fast) var(--motion-ease),
-              transform var(--motion-fast) var(--motion-ease),
-              border-color var(--motion-fast) var(--motion-ease);
-}
-.room--clickable {
-  cursor: pointer;
-}
-.room--clickable:hover {
-  box-shadow: var(--elev-2);
-  transform: translateY(-2px);
-  border-color: color-mix(in oklch, var(--primary) 30%, var(--border));
-}
-.room--clickable:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 20%, transparent), var(--elev-2);
-}
-
-.room-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.num-block { display: flex; flex-direction: column; }
-.num { font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--ink-900); letter-spacing: -0.02em; }
-.floor { font-size: var(--font-size-xs); color: var(--muted-fg); margin-top: 2px; }
-
-.room-meta { display: flex; flex-direction: column; gap: 6px; }
-.meta-row { display: flex; justify-content: space-between; align-items: center; font-size: var(--font-size-sm); }
-
-.room-foot {
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.cta {
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  color: var(--primary-strong);
-  opacity: 0;
-  transition: opacity var(--motion-fast) var(--motion-ease);
-}
-.room--clickable:hover .cta,
-.room--clickable:focus-visible .cta {
-  opacity: 1;
-}
-
-.admin-actions { display: flex; gap: 4px; justify-content: flex-end; }
-.admin-form { display: flex; flex-direction: column; gap: 12px; }
-.admin-form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.row-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
-</style>

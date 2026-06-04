@@ -10,6 +10,7 @@ class UserRole(str, Enum):
     RECEPTION = "reception"
     TECHNICIAN = "technician"
     CLEANER = "cleaner"
+    GUEST = "guest"
 
 
 class CleaningStatus(str, Enum):

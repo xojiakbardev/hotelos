@@ -28,6 +28,8 @@ class RoomOut(BaseModel):
     cleanliness_status: Cleanliness
     status: RoomStatus
     nightly_rate_minor_units: int
+    freshness_score: float = 1.0
+    dynamic_price_minor_units: int = 0
     last_cleaned_at: datetime
     last_assigned_at: datetime | None = None
 
@@ -42,7 +44,7 @@ class RoomList(BaseModel):
 
 class RoomCreate(BaseModel):
     room_number: int = Field(..., ge=1, le=9999)
-    floor: int = Field(..., ge=1, le=10)
+    floor: int = Field(..., ge=1, le=99)
     room_type: RoomType
     proximity: Proximity
     nightly_rate_minor_units: int = Field(..., ge=1)
@@ -51,7 +53,12 @@ class RoomCreate(BaseModel):
 class RoomUpdate(BaseModel):
     """All fields optional — manager edits a single field at a time."""
 
-    floor: int | None = Field(default=None, ge=1, le=10)
+    floor: int | None = Field(default=None, ge=1, le=99)
     room_type: RoomType | None = None
     proximity: Proximity | None = None
     nightly_rate_minor_units: int | None = Field(default=None, ge=1)
+
+
+class RoomBulkCreate(BaseModel):
+    rooms: list[RoomCreate]
+

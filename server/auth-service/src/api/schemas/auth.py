@@ -10,7 +10,7 @@ from src.domain.enums import UserRole
 
 class LoginRequest(BaseModel):
     phone: str = Field(..., pattern=PHONE_REGEX, examples=["+998901111111"])
-    password: str = Field(..., min_length=6, max_length=128)
+    password: str = Field(..., min_length=4, max_length=128)
 
 
 class TokenResponse(BaseModel):
@@ -20,6 +20,10 @@ class TokenResponse(BaseModel):
     user_id: str
     phone: str
     full_name: str | None = None
+    guest_id: str | None = None
+    room_id: str | None = None
+    room_number: int | None = None
+    must_change_password: bool = False
 
 
 class MeResponse(BaseModel):
@@ -28,3 +32,4 @@ class MeResponse(BaseModel):
     full_name: str | None
     role: UserRole
     is_active: bool
+    must_change_password: bool = False

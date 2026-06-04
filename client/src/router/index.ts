@@ -12,10 +12,19 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true, layout: 'blank' }
   },
   {
+    path: '/guest',
+    component: () => import('@/layouts/GuestLayout.vue'),
+    meta: { roles: ['guest'] },
+    children: [
+      { path: '', name: 'guest-dashboard', component: () => import('@/views/GuestDashboard.vue') },
+      { path: 'change-password', name: 'guest-change-password', component: () => import('@/views/GuestChangePassword.vue') }
+    ]
+  },
+  {
     path: '/',
     component: () => import('@/layouts/AppLayout.vue'),
     children: [
-      { path: '', name: 'dashboard', component: () => import('@/views/Dashboard.vue') },
+      { path: '', name: 'dashboard', component: () => import('@/views/Dashboard.vue'), meta: { roles: ['manager', 'reception', 'cleaner'] } },
       {
         path: 'rooms',
         name: 'rooms',
@@ -69,6 +78,12 @@ const routes: RouteRecordRaw[] = [
         name: 'menu',
         component: () => import('@/views/MenuList.vue'),
         meta: { roles: ['manager'], title: 'Menyu' }
+      },
+      {
+        path: 'audit-logs',
+        name: 'audit-logs',
+        component: () => import('@/views/AuditLogs.vue'),
+        meta: { roles: ['manager'], title: 'Audit log' }
       }
     ]
   },
@@ -84,8 +99,28 @@ router.beforeEach((to) => {
   if (to.meta.public) return true
   if (!auth.isAuthenticated) return { name: 'login', query: { next: to.fullPath } }
 
+  // Guest users can only access /guest routes
+  if (auth.role === 'guest') {
+    if (to.path.startsWith('/guest')) {
+      // If must change password, force to change-password page
+      if (auth.mustChangePassword && to.name !== 'guest-change-password') {
+        return { name: 'guest-change-password' }
+      }
+      return true
+    }
+    return { name: 'guest-dashboard' }
+  }
+
+  // Staff users cannot access /guest portal routes
+  if (to.path === '/guest' || to.path.startsWith('/guest/')) {
+    return { name: 'dashboard' }
+  }
+
   const allowed = (to.meta.roles as Role[] | undefined) ?? null
   if (allowed && auth.role && !allowed.includes(auth.role)) {
+    // Redirect each role to their home page
+    if (auth.role === 'technician') return { name: 'maintenance' }
+    if (auth.role === 'cleaner') return { name: 'housekeeping' }
     return { name: 'dashboard' }
   }
   return true
