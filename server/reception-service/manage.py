@@ -154,6 +154,9 @@ def seedguests(count: int) -> None:
             redis_client = create_redis()
             publisher = EventPublisher(redis_client, "reception-service")
             
+            # Commit the read transaction so we can start fresh ones
+            await session.commit()
+            
             seeded = 0
             for room in target_rooms:
                 async with session.begin():
