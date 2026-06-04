@@ -81,13 +81,13 @@ function nightsLeft(g: Guest) { return Math.max(0, Math.ceil((new Date(g.expecte
           <div class="grid grid-cols-2 gap-4">
             <div><p class="text-xs uppercase text-muted-foreground font-semibold">Telefon</p><p class="font-mono text-sm">{{ displayGuest.phone }}</p></div>
             <div><p class="text-xs uppercase text-muted-foreground font-semibold">Xona</p><p class="text-sm">#{{ displayGuest.room_number }} · {{ displayGuest.floor }}q</p></div>
-            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Xona turi</p><p class="text-sm">{{ ROOM_TYPE_UZ[guest.room_type] || guest.room_type }}</p></div>
-            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Tunlik narx</p><p class="text-sm font-semibold text-primary">{{ money(guest.nightly_rate_locked_minor_units) }}</p></div>
-            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Qabul qilingan</p><p class="text-sm">{{ new Date(guest.checked_in_at).toLocaleString('uz-UZ') }}</p></div>
-            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Chiqish</p><p class="text-sm">{{ new Date(guest.expected_checkout_at).toLocaleString('uz-UZ') }}</p></div>
+            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Xona turi</p><p class="text-sm">{{ ROOM_TYPE_UZ[displayGuest!.room_type] || displayGuest!.room_type }}</p></div>
+            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Tunlik narx</p><p class="text-sm font-semibold text-primary">{{ money(displayGuest!.nightly_rate_locked_minor_units) }}</p></div>
+            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Qabul qilingan</p><p class="text-sm">{{ new Date(displayGuest!.checked_in_at).toLocaleString('uz-UZ') }}</p></div>
+            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Chiqish</p><p class="text-sm">{{ new Date(displayGuest!.expected_checkout_at).toLocaleString('uz-UZ') }}</p></div>
             <div><p class="text-xs uppercase text-muted-foreground font-semibold">Yashagan</p><p class="text-sm">{{ nightsSoFar(displayGuest!) }} tun</p></div>
             <div><p class="text-xs uppercase text-muted-foreground font-semibold">Qolgan</p><p class="text-sm">{{ nightsLeft(displayGuest!) }} kun</p></div>
-            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Tozalash</p><p class="text-sm">{{ PREF_UZ[guest.cleaning_preference] || guest.cleaning_preference }}</p></div>
+            <div><p class="text-xs uppercase text-muted-foreground font-semibold">Tozalash</p><p class="text-sm">{{ PREF_UZ[displayGuest!.cleaning_preference] || displayGuest!.cleaning_preference }}</p></div>
             <div><p class="text-xs uppercase text-muted-foreground font-semibold">DND</p><p :class="displayGuest.do_not_disturb ? 'text-sm text-amber-600 font-medium' : 'text-sm'">{{ displayGuest.do_not_disturb ? 'Yoqilgan' : "O'chiq" }}</p></div>
           </div>
 
@@ -96,9 +96,9 @@ function nightsLeft(g: Guest) { return Math.max(0, Math.ceil((new Date(g.expecte
           <!-- Cost summary -->
           <div class="bg-muted/50 rounded-lg p-4 space-y-2">
             <p class="text-xs font-semibold text-muted-foreground uppercase">Joriy hisob</p>
-            <div class="flex justify-between text-sm"><span>Xona ({{ nightsSoFar(displayGuest!) }} × {{ money(guest.nightly_rate_locked_minor_units) }})</span><span class="tabular-nums font-mono">{{ money(nightsSoFar(displayGuest!) * guest.nightly_rate_locked_minor_units) }}</span></div>
+            <div class="flex justify-between text-sm"><span>Xona ({{ nightsSoFar(displayGuest!) }} × {{ money(displayGuest!.nightly_rate_locked_minor_units) }})</span><span class="tabular-nums font-mono">{{ money(nightsSoFar(displayGuest!) * displayGuest!.nightly_rate_locked_minor_units) }}</span></div>
             <div class="flex justify-between text-sm"><span>Xona xizmati</span><span class="tabular-nums font-mono">{{ money(orders.reduce((s, o) => s + (o.status === 'delivered' ? o.total_minor_units : 0), 0)) }}</span></div>
-            <div class="flex justify-between text-sm font-bold border-t pt-2"><span>Jami</span><span class="tabular-nums font-mono">{{ money(nightsSoFar(displayGuest!) * guest.nightly_rate_locked_minor_units + orders.reduce((s, o) => s + (o.status === 'delivered' ? o.total_minor_units : 0), 0)) }}</span></div>
+            <div class="flex justify-between text-sm font-bold border-t pt-2"><span>Jami</span><span class="tabular-nums font-mono">{{ money(nightsSoFar(displayGuest!) * displayGuest!.nightly_rate_locked_minor_units + orders.reduce((s, o) => s + (o.status === 'delivered' ? o.total_minor_units : 0), 0)) }}</span></div>
           </div>
 
           <!-- PIN -->
