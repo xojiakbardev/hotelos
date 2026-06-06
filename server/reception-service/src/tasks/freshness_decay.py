@@ -59,7 +59,7 @@ async def _tick() -> None:
             )
             rooms = list((await session.execute(stmt)).scalars().all())
 
-            dirty_count = 0
+            dirty_rooms: list[Room] = []
             for room in rooms:
                 new_score = compute_freshness_score(room.last_cleaned_at)
                 room.freshness_score = new_score
@@ -69,11 +69,33 @@ async def _tick() -> None:
                 # If freshness reached zero, room needs re-cleaning
                 if new_score <= 0.0:
                     room.cleanliness_status = Cleanliness.DIRTY.value
-                    dirty_count += 1
+                    dirty_rooms.append(room)
 
-            if dirty_count:
+            if dirty_rooms:
                 logger.info(
                     "freshness decay: %d room(s) marked dirty (stale after %dh)",
-                    dirty_count,
+                    len(dirty_rooms),
                     int(FRESHNESS_DECAY_HOURS),
                 )
+
+    # Publish cleaning_requested events outside the DB transaction
+    if dirty_rooms:
+        from src.core.broker import create_redis
+        from src.events.publisher import EventPublisher
+        from src.events.topics import Channels
+
+        redis = create_redis()
+        publisher = EventPublisher(redis, publisher_name="reception-service")
+        try:
+            for room in dirty_rooms:
+                await publisher.publish(
+                    channel=Channels.ROOM_CLEANING_REQUESTED,
+                    payload={
+                        "room_id": str(room.id),
+                        "room_number": room.room_number,
+                        "floor": room.floor,
+                        "reason": "freshness_decay",
+                    },
+                )
+        finally:
+            await redis.aclose()

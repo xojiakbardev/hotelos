@@ -16,13 +16,13 @@ function logout() {
 
 <template>
   <div class="min-h-screen bg-background">
-    <header class="h-16 bg-primary text-primary-foreground flex items-center justify-between px-4 md:px-6 shadow-sm">
+    <header class="h-14 bg-primary text-primary-foreground flex items-center justify-between px-4 md:px-6">
       <div class="flex items-center gap-3">
         <div class="flex items-center gap-2">
           <DoorOpen class="w-5 h-5" />
-          <span class="font-bold text-lg">Xona {{ auth.user?.room_number }}</span>
+          <span class="font-bold text-xl tracking-tight">{{ auth.user?.room_number }}</span>
         </div>
-        <span class="text-sm opacity-90 hidden sm:inline">{{ auth.user?.full_name || 'Mehmon' }}</span>
+        <span class="text-sm opacity-80 hidden sm:inline">{{ auth.user?.full_name || 'Mehmon' }}</span>
       </div>
       <Button
         variant="ghost"

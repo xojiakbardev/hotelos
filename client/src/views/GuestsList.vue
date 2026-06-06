@@ -1,27 +1,30 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import { computed, onMounted, ref, watch } from 'vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
-import GuestDetail from './GuestDetail.vue'
 import CheckInForm from './CheckInForm.vue'
-import { type Guest } from '@/api/reception'
+import { receptionApi, type Guest, type Order, type Bill } from '@/api/reception'
 import { useGuestsStore } from '@/stores/guests'
 import { useWsStore } from '@/stores/ws'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
-import { UserPlus, Search } from 'lucide-vue-next'
+import { UserPlus, Search, MoreVertical, Eye, LogOut, Trash2, Loader2, CheckCircle } from 'lucide-vue-next'
 
 const guests = useGuestsStore()
 const ws = useWsStore()
 const auth = useAuthStore()
 const toast = useToastStore()
+const router = useRouter()
 
 onMounted(() => guests.load())
 
@@ -33,10 +36,21 @@ watch(
   }
 )
 
-const detailGuest = ref<Guest | null>(null)
 const checkInOpen = ref(false)
 const searchQuery = ref('')
 const filterFloor = ref('all')
+
+// Checkout modal
+const checkoutGuest = ref<Guest | null>(null)
+const checkoutOpen = ref(false)
+const checkoutOrders = ref<Order[]>([])
+const checkingOut = ref(false)
+const checkoutBill = ref<Bill | null>(null)
+
+// Delete modal
+const deleteGuest = ref<Guest | null>(null)
+const deleteOpen = ref(false)
+const deleting = ref(false)
 
 const filteredGuests = computed(() => {
   let list = guests.guests
@@ -77,6 +91,58 @@ function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + "
 function nightsSoFar(g: Guest) {
   const ms = Date.now() - new Date(g.checked_in_at).getTime()
   return Math.max(1, Math.ceil(ms / (24 * 3600 * 1000)))
+}
+
+function nightsLeft(g: Guest) {
+  return Math.max(0, Math.ceil((new Date(g.expected_checkout_at).getTime() - Date.now()) / 86400000))
+}
+
+async function openCheckout(g: Guest) {
+  checkoutGuest.value = g
+  checkoutBill.value = null
+  checkingOut.value = false
+  checkoutOpen.value = true
+  try {
+    const allOrders = await receptionApi.listOrders()
+    checkoutOrders.value = allOrders.filter(o => o.guest_id === g.id)
+  } catch { checkoutOrders.value = [] }
+}
+
+const checkoutRoomTotal = computed(() => {
+  if (!checkoutGuest.value) return 0
+  return nightsSoFar(checkoutGuest.value) * checkoutGuest.value.nightly_rate_locked_minor_units
+})
+const checkoutServiceTotal = computed(() => checkoutOrders.value.reduce((s, o) => s + (o.status === 'delivered' ? o.total_minor_units : 0), 0))
+const checkoutGrandTotal = computed(() => checkoutRoomTotal.value + checkoutServiceTotal.value)
+
+async function doCheckOut() {
+  if (!checkoutGuest.value) return
+  checkingOut.value = true
+  try {
+    const bill = await receptionApi.checkOut(checkoutGuest.value.id)
+    checkoutBill.value = bill
+    toast.success('Mehmon chiqarildi')
+    guests.load()
+  } catch (e: any) {
+    toast.error(e?.response?.data?.message || e?.response?.data?.detail || 'Check-out xatosi')
+  } finally {
+    checkingOut.value = false
+  }
+}
+
+async function doDelete() {
+  if (!deleteGuest.value) return
+  deleting.value = true
+  try {
+    await receptionApi.checkOut(deleteGuest.value.id)
+    toast.info("Mehmon o'chirildi")
+    deleteOpen.value = false
+    guests.load()
+  } catch (e: any) {
+    toast.error(e?.response?.data?.message || "O'chirishda xatolik")
+  } finally {
+    deleting.value = false
+  }
 }
 </script>
 
@@ -161,6 +227,7 @@ function nightsSoFar(g: Guest) {
             <TableHead class="text-right">Tunlar</TableHead>
             <TableHead class="text-right">Narx/tun</TableHead>
             <TableHead>Chiqish sanasi</TableHead>
+            <TableHead class="w-10"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -168,7 +235,7 @@ function nightsSoFar(g: Guest) {
             v-for="g in filteredGuests"
             :key="g.id"
             class="cursor-pointer"
-            @click="detailGuest = g"
+            @click="router.push(`/guests/${g.id}`)"
           >
             <TableCell>
               <div class="flex items-center gap-2.5">
@@ -189,6 +256,30 @@ function nightsSoFar(g: Guest) {
             <TableCell class="text-right font-mono tabular-nums">{{ nightsSoFar(g) }}</TableCell>
             <TableCell class="text-right font-mono tabular-nums">{{ money(g.nightly_rate_locked_minor_units) }}</TableCell>
             <TableCell class="text-muted-foreground">{{ new Date(g.expected_checkout_at).toLocaleDateString('uz-UZ') }}</TableCell>
+            <TableCell @click.stop>
+              <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                  <Button variant="ghost" size="icon-sm">
+                    <MoreVertical class="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem @click="router.push(`/guests/${g.id}`)">
+                    <Eye class="w-4 h-4 mr-2" />
+                    Batafsil
+                  </DropdownMenuItem>
+                  <DropdownMenuItem @click="openCheckout(g)">
+                    <LogOut class="w-4 h-4 mr-2" />
+                    Check-out
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem class="text-destructive focus:text-destructive" @click="deleteGuest = g; deleteOpen = true">
+                    <Trash2 class="w-4 h-4 mr-2" />
+                    O'chirish
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -199,12 +290,12 @@ function nightsSoFar(g: Guest) {
       <DialogContent class="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Mehmonni qabul qilish</DialogTitle>
+          <DialogDescription class="sr-only">Yangi mehmonni ro'yxatdan o'tkazish formasi</DialogDescription>
         </DialogHeader>
         <CheckInForm @cancel="closeCheckIn" @success="onCheckInSuccess" />
       </DialogContent>
     </Dialog>
 
-    <!-- Guest Detail Dialog -->
-    <GuestDetail :guest="detailGuest" :open="detailGuest !== null" @close="detailGuest = null" />
+    <!-- Guest Detail removed — now a separate page -->
   </div>
 </template>

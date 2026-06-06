@@ -24,8 +24,8 @@ from src.infra.repositories.menu_repository import MenuRepository
 
 router = APIRouter(prefix="/menu", tags=["menu"])
 
-CAN_VIEW = (UserRole.MANAGER, UserRole.RECEPTION, UserRole.GUEST)
-CAN_EDIT = (UserRole.MANAGER,)
+CAN_VIEW = (UserRole.MANAGER, UserRole.RECEPTION, UserRole.KITCHEN, UserRole.GUEST)
+CAN_EDIT = (UserRole.MANAGER, UserRole.KITCHEN)
 
 
 @router.get("", response_model=list[MenuItemOut])

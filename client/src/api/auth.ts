@@ -1,6 +1,6 @@
 import { api } from './client'
 
-export type Role = 'manager' | 'reception' | 'technician' | 'cleaner' | 'guest'
+export type Role = 'manager' | 'reception' | 'technician' | 'cleaner' | 'kitchen' | 'guest'
 
 export interface TokenResponse {
   access_token: string

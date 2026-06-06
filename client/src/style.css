@@ -6,6 +6,7 @@
 
 @layer base {
   :root {
+    /* Color tokens (HSL) */
     --background: 210 40% 98%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -30,12 +31,40 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
+
+    /* Shadow scale */
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.04), 0 2px 4px rgba(0, 0, 0, 0.03);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.04), 0 4px 6px rgba(0, 0, 0, 0.02);
+
+    /* Typography */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+    --tracking-tight: -0.01em;
+    --tracking-tighter: -0.011em;
+
+    /* Radius scale */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --radius-full: 999px;
+
+    /* Transition durations */
+    --duration-fast: 100ms;
+    --duration-normal: 150ms;
+    --duration-slow: 200ms;
+    --duration-slower: 300ms;
+
+    /* Badge opacity */
+    --badge-bg-opacity: 0.1;
   }
 
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+    --card: 224 71% 7%;
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
@@ -53,9 +82,18 @@
     --success-foreground: 210 40% 98%;
     --warning: 38 92% 50%;
     --warning-foreground: 222.2 84% 4.9%;
-    --border: 217.2 32.6% 17.5%;
+    --border: 217.2 32.6% 15%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
+
+    /* Dark shadow adjustments */
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.15);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.2), 0 4px 6px rgba(0, 0, 0, 0.1);
+
+    /* Badge opacity (higher for dark mode contrast) */
+    --badge-bg-opacity: 0.15;
   }
 }
 
@@ -97,4 +135,75 @@ body {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* --- Transition classes for Vue <Transition> --- */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--duration-normal) ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-right-enter-active {
+  transition: transform var(--duration-slow) ease, opacity var(--duration-slow) ease;
+}
+.slide-right-leave-active {
+  transition: transform var(--duration-fast) ease, opacity var(--duration-fast) ease;
+}
+.slide-right-enter-from {
+  transform: translateX(8px);
+  opacity: 0;
+}
+.slide-right-leave-to {
+  transform: translateX(8px);
+  opacity: 0;
+}
+
+.scale-enter-active {
+  transition: transform var(--duration-normal) ease-out, opacity var(--duration-normal) ease-out;
+}
+.scale-leave-active {
+  transition: transform var(--duration-fast) ease, opacity var(--duration-fast) ease;
+}
+.scale-enter-from {
+  transform: scale(0.98);
+  opacity: 0;
+}
+.scale-leave-to {
+  opacity: 0;
+}
+
+/* --- Keyframe animations --- */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes scale-in {
+  0% { transform: scale(0.95); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes count-up {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes badge-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
 }

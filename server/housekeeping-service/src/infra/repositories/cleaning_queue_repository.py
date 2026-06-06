@@ -51,13 +51,23 @@ class CleaningQueueRepository:
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def enqueue(
-        self, *, room_id: uuid.UUID, room_number: int, floor: int
+        self,
+        *,
+        room_id: uuid.UUID,
+        room_number: int,
+        floor: int,
+        do_not_disturb: bool = False,
+        cleaning_preference: str = "afternoon",
+        cleaning_preference_note: str | None = None,
     ) -> CleaningQueueEntry:
         entry = CleaningQueueEntry(
             room_id=room_id,
             room_number=room_number,
             floor=floor,
             status=CleaningStatus.PENDING.value,
+            do_not_disturb=do_not_disturb,
+            cleaning_preference=cleaning_preference,
+            cleaning_preference_note=cleaning_preference_note,
         )
         self.session.add(entry)
         await self.session.flush()
@@ -72,6 +82,16 @@ class CleaningQueueRepository:
         await self.session.flush()
 
     async def mark_completed(self, entry: CleaningQueueEntry) -> None:
+        # Remove any previous completed entry for this room to avoid unique constraint violation
+        from sqlalchemy import delete
+
+        await self.session.execute(
+            delete(CleaningQueueEntry).where(
+                CleaningQueueEntry.room_id == entry.room_id,
+                CleaningQueueEntry.status == CleaningStatus.COMPLETED.value,
+                CleaningQueueEntry.id != entry.id,
+            )
+        )
         entry.status = CleaningStatus.COMPLETED.value
         entry.completed_at = datetime.now(timezone.utc)
         await self.session.flush()

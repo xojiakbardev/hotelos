@@ -39,6 +39,43 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("reception-service")
 
 
+async def _sync_dirty_rooms_to_queue(publisher: EventPublisher) -> None:
+    """On startup, publish cleaning_requested for all dirty+available rooms.
+    This ensures rooms that went dirty while housekeeping was down get queued."""
+    import asyncio
+    await asyncio.sleep(3)  # Let housekeeping start up first
+
+    from sqlalchemy import select
+    from src.core.db import async_session_factory
+    from src.domain.enums import Cleanliness, RoomStatus
+    from src.domain.models import Room
+
+    try:
+        async with async_session_factory() as session:
+            stmt = select(Room).where(
+                Room.cleanliness_status == Cleanliness.DIRTY.value,
+                Room.status == RoomStatus.AVAILABLE.value,
+            )
+            rooms = list((await session.execute(stmt)).scalars().all())
+
+        if rooms:
+            logger.info("startup sync: %d dirty room(s) → cleaning queue", len(rooms))
+            for room in rooms:
+                await publisher.publish(
+                    channel=Channels.ROOM_CLEANING_REQUESTED,
+                    payload={
+                        "room_id": str(room.id),
+                        "room_number": room.room_number,
+                        "floor": room.floor,
+                        "reason": "startup_sync",
+                    },
+                )
+        else:
+            logger.info("startup sync: no dirty rooms found")
+    except Exception:
+        logger.exception("startup sync failed (non-fatal)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.redis = create_redis()
@@ -57,6 +94,9 @@ async def lifespan(app: FastAPI):
     from src.tasks.freshness_decay import freshness_decay_loop
     decay_task = asyncio.create_task(freshness_decay_loop(), name="freshness-decay")
     app.state.decay_task = decay_task
+
+    # On startup: sync all dirty rooms to housekeeping queue
+    asyncio.create_task(_sync_dirty_rooms_to_queue(app.state.publisher))
 
     logger.info("reception-service ready (redis=%s)", settings.redis_url)
     try:

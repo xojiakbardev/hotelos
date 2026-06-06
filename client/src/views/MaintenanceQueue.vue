@@ -9,20 +9,61 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton'
 import MaintenanceReport from './MaintenanceReport.vue'
 import { maintenanceApi, type Issue } from '@/api/maintenance'
+import { authApi, type UserOut } from '@/api/auth'
 import { useMaintenanceStore } from '@/stores/maintenance'
 import { useWsStore } from '@/stores/ws'
 import { useAuthStore } from '@/stores/auth'
 import { parseApiError, useOptimistic } from '@/composables/useOptimistic'
+import { useToastStore } from '@/stores/toast'
 import { URGENCY_UZ } from '@/lib/labels'
 import { cn } from '@/lib/utils'
-import { AlertTriangle, Plus, CheckCircle, UserPlus } from 'lucide-vue-next'
+import { AlertTriangle, Plus, CheckCircle, UserPlus, Loader2 } from 'lucide-vue-next'
 
 const store = useMaintenanceStore()
 const ws = useWsStore()
 const auth = useAuthStore()
+const toast = useToastStore()
 
 const reportOpen = ref(false)
+const activeTab = ref('open')
 const resolved = ref<Issue[]>([])
+
+// Assign modal
+const assignOpen = ref(false)
+const assignIssue = ref<Issue | null>(null)
+const technicians = ref<UserOut[]>([])
+const techLoading = ref(false)
+const assigning = ref<string | null>(null)
+
+function openAssignModal(issue: Issue) {
+  assignIssue.value = issue
+  assignOpen.value = true
+  loadTechnicians()
+}
+
+async function loadTechnicians() {
+  techLoading.value = true
+  try {
+    technicians.value = await authApi.listUsers('technician')
+  } catch { technicians.value = [] }
+  finally { techLoading.value = false }
+}
+
+async function assignTo(techId: string) {
+  if (!assignIssue.value) return
+  assigning.value = techId
+  try {
+    await maintenanceApi.assign(assignIssue.value.id, techId)
+    toast.success(`Muammo texnikka tayinlandi`)
+    assignOpen.value = false
+    activeTab.value = 'assigned'
+    store.load(auth.role || undefined)
+  } catch (e: any) {
+    toast.error(e?.response?.data?.message || 'Tayinlashda xatolik')
+  } finally {
+    assigning.value = null
+  }
+}
 const resolvedLoading = ref(false)
 
 const isManager = computed(() => auth.role === 'manager')
@@ -192,14 +233,6 @@ function onReported() {
 
     <!-- ===== MANAGER / RECEPTION LAYOUT ===== -->
     <template v-else>
-      <!-- Action bar -->
-      <div class="flex justify-end">
-        <Button v-if="canReport" size="sm" @click="reportOpen = true">
-          <Plus class="w-4 h-4 mr-1" />
-          Muammo qayd etish
-        </Button>
-      </div>
-
       <!-- Critical alert -->
       <div v-if="criticalOpen.length" class="rounded-lg border-l-4 border-l-destructive bg-destructive/10 p-4 flex items-start gap-3 animate-pulse" role="alert">
         <AlertTriangle class="w-5 h-5 text-destructive shrink-0 mt-0.5" />
@@ -254,12 +287,18 @@ function onReported() {
       </div>
 
       <!-- Tabs: Ochiq / Jarayonda / Tarix -->
-      <Tabs v-else default-value="open">
-        <TabsList>
-          <TabsTrigger value="open">Tayinlanmagan ({{ unassigned.length }})</TabsTrigger>
-          <TabsTrigger value="assigned">Jarayonda ({{ assigned.length }})</TabsTrigger>
-          <TabsTrigger value="resolved">Hal qilingan ({{ resolved.length }})</TabsTrigger>
-        </TabsList>
+      <Tabs v-else v-model="activeTab">
+        <div class="flex items-center justify-between">
+          <TabsList>
+            <TabsTrigger value="open">Tayinlanmagan ({{ unassigned.length }})</TabsTrigger>
+            <TabsTrigger value="assigned">Jarayonda ({{ assigned.length }})</TabsTrigger>
+            <TabsTrigger value="resolved">Hal qilingan ({{ resolved.length }})</TabsTrigger>
+          </TabsList>
+          <Button v-if="canReport" size="sm" @click="reportOpen = true">
+            <Plus class="w-4 h-4 mr-1" />
+            Muammo qayd etish
+          </Button>
+        </div>
 
         <!-- Open/Unassigned -->
         <TabsContent value="open">
@@ -282,9 +321,13 @@ function onReported() {
                   <TableCell class="max-w-[300px]">{{ i.description }}</TableCell>
                   <TableCell class="text-muted-foreground text-xs">{{ new Date(i.reported_at).toLocaleString('uz-UZ') }}</TableCell>
                   <TableCell class="text-right">
-                    <Button size="xs" @click="claim(i)">
+                    <Button v-if="isManager" size="xs" @click="openAssignModal(i)">
                       <UserPlus class="w-3 h-3 mr-1" />
                       Tayinlash
+                    </Button>
+                    <Button v-else size="xs" @click="claim(i)">
+                      <UserPlus class="w-3 h-3 mr-1" />
+                      Qabul qilish
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -362,6 +405,50 @@ function onReported() {
           <DialogTitle>Muammo qayd etish</DialogTitle>
         </DialogHeader>
         <MaintenanceReport @cancel="reportOpen = false" @success="onReported" />
+      </DialogContent>
+    </Dialog>
+
+    <!-- Assign Dialog -->
+    <Dialog :open="assignOpen" @update:open="assignOpen = $event">
+      <DialogContent class="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Texnik tayinlash</DialogTitle>
+        </DialogHeader>
+        <div v-if="assignIssue" class="space-y-4">
+          <div class="bg-muted/40 rounded-lg p-3 text-sm">
+            <span class="font-mono font-bold">#{{ assignIssue.room_number }}</span>
+            <span class="text-muted-foreground"> — {{ assignIssue.description.slice(0, 60) }}{{ assignIssue.description.length > 60 ? '...' : '' }}</span>
+          </div>
+
+          <div v-if="techLoading" class="space-y-2">
+            <Skeleton class="h-10 w-full" />
+            <Skeleton class="h-10 w-full" />
+            <Skeleton class="h-10 w-full" />
+          </div>
+          <div v-else-if="!technicians.length" class="text-center py-4 text-muted-foreground text-sm">
+            Texniklar topilmadi
+          </div>
+          <div v-else class="space-y-2">
+            <button
+              v-for="tech in technicians"
+              :key="tech.id"
+              class="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-accent hover:border-primary/30 transition-all duration-150 cursor-pointer"
+              :disabled="assigning !== null"
+              @click="assignTo(tech.id)"
+            >
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-primary/10 grid place-items-center text-xs font-bold text-primary">
+                  {{ (tech.full_name || tech.phone).slice(0, 1).toUpperCase() }}
+                </div>
+                <div class="text-left">
+                  <p class="text-sm font-medium">{{ tech.full_name || tech.phone }}</p>
+                  <p class="text-xs text-muted-foreground">{{ tech.phone }}</p>
+                </div>
+              </div>
+              <Loader2 v-if="assigning === tech.id" class="w-4 h-4 animate-spin text-primary" />
+            </button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   </div>

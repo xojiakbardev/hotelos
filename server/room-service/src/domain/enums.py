@@ -10,6 +10,7 @@ class UserRole(str, Enum):
     RECEPTION = "reception"
     TECHNICIAN = "technician"
     CLEANER = "cleaner"
+    KITCHEN = "kitchen"
     GUEST = "guest"
 
 

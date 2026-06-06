@@ -38,8 +38,8 @@ const form = ref({
   passport_number: '',
   room_type: (props.room?.room_type ?? 'double') as RoomType,
   nights: 1,
-  floor_preference: '' as '' | '1' | '2',
-  proximity_preference: '' as '' | Proximity,
+  floor_preference: 'none' as 'none' | '1' | '2',
+  proximity_preference: 'none' as 'none' | Proximity,
   cleaning_preference: 'afternoon' as CleaningPreference,
   cleaning_preference_note: ''
 })
@@ -81,8 +81,8 @@ async function submit() {
             passport_number: form.value.passport_number.trim() || undefined,
             room_type: form.value.room_type,
             nights: form.value.nights,
-            floor_preference: form.value.floor_preference ? Number(form.value.floor_preference) : undefined,
-            proximity_preference: form.value.proximity_preference || undefined,
+            floor_preference: form.value.floor_preference !== 'none' ? Number(form.value.floor_preference) : undefined,
+            proximity_preference: form.value.proximity_preference !== 'none' ? form.value.proximity_preference : undefined,
             cleaning_preference: form.value.cleaning_preference,
             cleaning_preference_note: noteValue
           }
@@ -225,7 +225,7 @@ async function submit() {
           <Select v-model="form.floor_preference">
             <SelectTrigger><SelectValue placeholder="Afzallik yo'q" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Afzallik yo'q</SelectItem>
+              <SelectItem value="none">Afzallik yo'q</SelectItem>
               <SelectItem value="1">1-qavat</SelectItem>
               <SelectItem value="2">2-qavat</SelectItem>
             </SelectContent>
@@ -236,7 +236,7 @@ async function submit() {
           <Select v-model="form.proximity_preference">
             <SelectTrigger><SelectValue placeholder="Afzallik yo'q" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Afzallik yo'q</SelectItem>
+              <SelectItem value="none">Afzallik yo'q</SelectItem>
               <SelectItem value="elevator">Lift yonida</SelectItem>
               <SelectItem value="stairs">Zinapoya yonida</SelectItem>
               <SelectItem value="other">Boshqa</SelectItem>

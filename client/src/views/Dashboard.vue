@@ -11,6 +11,7 @@ import { metricsApi, type DashboardMetrics } from '@/api/metrics'
 import { receptionApi, type DailyCount } from '@/api/reception'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { StatCard } from '@/components/ui/stat-card'
 import {
   Users,
   Sparkles,
@@ -31,6 +32,7 @@ const maintenance = useMaintenanceStore()
 const metrics = ref<DashboardMetrics | null>(null)
 const metricsLoading = ref(true)
 const dailyStats = ref<DailyCount[]>([])
+const chartPeriod = ref<'7' | '14' | '30'>('14')
 const canSeeRevenue = computed(() => auth.role === 'manager')
 
 async function loadMetrics() {
@@ -40,7 +42,7 @@ async function loadMetrics() {
 }
 
 async function loadDailyStats() {
-  try { dailyStats.value = await receptionApi.dailyGuestStats(14) } catch { /* ignore */ }
+  try { dailyStats.value = await receptionApi.dailyGuestStats(Number(chartPeriod.value)) } catch { /* ignore */ }
 }
 
 function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
@@ -91,7 +93,7 @@ const chartBars = computed(() =>
   dailyStats.value.map(d => ({
     date: d.date,
     count: d.count,
-    height: Math.max(4, (d.count / chartMax.value) * 100)
+    height: Math.max(4, Math.round((d.count / chartMax.value) * 160))
   }))
 )
 
@@ -138,66 +140,44 @@ const avgOrderTime = computed(() => {
       </template>
       <template v-else>
         <!-- Faol mehmonlar -->
-        <Card v-if="auth.role === 'manager' || auth.role === 'reception'">
-          <CardContent class="p-5">
-            <div class="flex items-center justify-between">
-              <div class="space-y-1">
-                <p class="text-sm text-muted-foreground">Faol mehmonlar</p>
-                <p class="text-2xl font-bold tracking-tight">{{ guests.guests.length }}</p>
-              </div>
-              <div class="h-10 w-10 rounded-lg bg-primary/10 grid place-items-center">
-                <Users class="w-5 h-5 text-primary" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          v-if="auth.role === 'manager' || auth.role === 'reception'"
+          label="Faol mehmonlar"
+          :value="guests.guests.length"
+          :icon="Users"
+          icon-color="primary"
+          :animate="true"
+        />
 
         <!-- Tozalash -->
-        <Card v-if="auth.role === 'manager' || auth.role === 'cleaner'">
-          <CardContent class="p-5">
-            <div class="flex items-center justify-between">
-              <div class="space-y-1">
-                <p class="text-sm text-muted-foreground">Tozalash navbati</p>
-                <p class="text-2xl font-bold tracking-tight">{{ cleaningOpen }}</p>
-              </div>
-              <div class="h-10 w-10 rounded-lg bg-warning/10 grid place-items-center">
-                <Sparkles class="w-5 h-5 text-amber-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          v-if="auth.role === 'manager' || auth.role === 'cleaner'"
+          label="Tozalash navbati"
+          :value="cleaningOpen"
+          :icon="Sparkles"
+          icon-color="warning"
+          :animate="true"
+        />
 
         <!-- Buyurtmalar -->
-        <Card v-if="auth.role === 'manager' || auth.role === 'reception'">
-          <CardContent class="p-5">
-            <div class="flex items-center justify-between">
-              <div class="space-y-1">
-                <p class="text-sm text-muted-foreground">Ochiq buyurtmalar</p>
-                <p class="text-2xl font-bold tracking-tight">{{ ordersOpen }}</p>
-              </div>
-              <div class="h-10 w-10 rounded-lg bg-primary/10 grid place-items-center">
-                <UtensilsCrossed class="w-5 h-5 text-primary" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          v-if="auth.role === 'manager' || auth.role === 'reception'"
+          label="Ochiq buyurtmalar"
+          :value="ordersOpen"
+          :icon="UtensilsCrossed"
+          icon-color="primary"
+          :animate="true"
+        />
 
         <!-- Texnik -->
-        <Card v-if="auth.role !== 'cleaner'">
-          <CardContent class="p-5">
-            <div class="flex items-center justify-between">
-              <div class="space-y-1">
-                <p class="text-sm text-muted-foreground">Texnik muammolar</p>
-                <p class="text-2xl font-bold tracking-tight">{{ openIssues }}</p>
-              </div>
-              <div class="h-10 w-10 rounded-lg" :class="openIssues > 0 ? 'bg-destructive/10' : 'bg-success/10'">
-                <div class="h-full w-full grid place-items-center">
-                  <Wrench class="w-5 h-5" :class="openIssues > 0 ? 'text-destructive' : 'text-green-600'" />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          v-if="auth.role !== 'cleaner'"
+          label="Texnik muammolar"
+          :value="openIssues"
+          :icon="Wrench"
+          :icon-color="openIssues > 0 ? 'destructive' : 'success'"
+          :animate="true"
+        />
       </template>
     </div>
 
@@ -233,22 +213,33 @@ const avgOrderTime = computed(() => {
 
     <!-- Guest stats chart -->
     <Card v-if="(auth.role === 'manager' || auth.role === 'reception') && dailyStats.length">
-      <CardHeader class="pb-2">
-        <CardTitle class="text-sm font-semibold">Kunlik mehmonlar (so'nggi 14 kun)</CardTitle>
+      <CardHeader class="pb-2 flex flex-row items-center justify-between">
+        <CardTitle class="text-sm font-semibold">Mehmonlar statistikasi</CardTitle>
+        <div class="flex gap-1">
+          <button
+            v-for="p in [{v:'7',l:'1 hafta'},{v:'14',l:'2 hafta'},{v:'30',l:'1 oy'}]"
+            :key="p.v"
+            class="px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 cursor-pointer"
+            :class="chartPeriod === p.v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'"
+            @click="chartPeriod = p.v as '7'|'14'|'30'; loadDailyStats()"
+          >
+            {{ p.l }}
+          </button>
+        </div>
       </CardHeader>
       <CardContent>
-        <div class="flex items-end gap-1 h-32">
+        <div class="flex items-end gap-1" style="height: 200px;">
           <div
             v-for="bar in chartBars"
             :key="bar.date"
-            class="flex-1 flex flex-col items-center gap-1"
+            class="flex-1 flex flex-col items-center justify-end h-full"
           >
-            <span class="text-[9px] text-muted-foreground tabular-nums">{{ bar.count || '' }}</span>
+            <span class="text-[9px] text-muted-foreground tabular-nums mb-1">{{ bar.count || '' }}</span>
             <div
-              class="w-full rounded-t-sm bg-primary/80 transition-all duration-300"
-              :style="{ height: bar.height + '%' }"
+              class="w-full rounded-t-sm bg-primary/80 transition-all duration-300 min-h-[2px]"
+              :style="{ height: bar.height + 'px' }"
             />
-            <span class="text-[8px] text-muted-foreground">{{ bar.date.slice(8) }}</span>
+            <span class="text-[8px] text-muted-foreground mt-1">{{ bar.date.slice(8) }}</span>
           </div>
         </div>
       </CardContent>

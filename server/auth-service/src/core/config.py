@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     )
     seed_cleaner_phone: str = Field(default="+998904444444", alias="SEED_CLEANER_PHONE")
     seed_cleaner_password: str = Field(default="cleaner123", alias="SEED_CLEANER_PASSWORD")
+    seed_kitchen_phone: str = Field(default="+998905555555", alias="SEED_KITCHEN_PHONE")
+    seed_kitchen_password: str = Field(default="kitchen123", alias="SEED_KITCHEN_PASSWORD")
 
     @property
     def database_url(self) -> str:

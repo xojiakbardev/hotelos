@@ -25,6 +25,7 @@ const ROLE_UZ: Record<Role, string> = {
   reception: 'Qabulchi',
   technician: 'Texnik',
   cleaner: 'Tozalovchi',
+  kitchen: 'Oshpaz',
   guest: 'Mehmon'
 }
 const ROLE_HINTS: Record<string, string> = {
@@ -32,6 +33,7 @@ const ROLE_HINTS: Record<string, string> = {
   reception: "Qabul/jo'natish, mehmon profili, xona xizmati.",
   technician: 'Texnik xizmat navbati: muammolarni qabul qilish va hal qilish.',
   cleaner: 'Tozalash navbati: xonalarni tozalashni boshlash va yakunlash.',
+  kitchen: 'Oshxona: buyurtmalarni tayyorlash va yetkazish.',
 }
 
 const passwordOk = computed(() => form.value.password.length >= 6)

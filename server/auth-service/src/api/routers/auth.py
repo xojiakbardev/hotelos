@@ -75,10 +75,9 @@ async def change_password(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="current password is incorrect",
         )
-    async with session.begin():
-        user.password_hash = hash_password(payload.new_password)
-        user.must_change_password = False
-        await session.flush()
+    user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = False
+    await session.commit()
 
     token = create_access_token(
         user_id=str(user.id),

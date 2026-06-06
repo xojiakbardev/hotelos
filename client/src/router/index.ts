@@ -24,18 +24,24 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     component: () => import('@/layouts/AppLayout.vue'),
     children: [
-      { path: '', name: 'dashboard', component: () => import('@/views/Dashboard.vue'), meta: { roles: ['manager', 'reception', 'cleaner'] } },
+      { path: '', name: 'dashboard', component: () => import('@/views/Dashboard.vue'), meta: { roles: ['manager', 'reception'] } },
       {
         path: 'rooms',
         name: 'rooms',
         component: () => import('@/views/RoomsList.vue'),
-        meta: { roles: ['manager', 'reception', 'cleaner', 'technician'], title: 'Xonalar' }
+        meta: { roles: ['manager', 'reception', 'cleaner', 'technician', 'kitchen'], title: 'Xonalar' }
       },
       {
         path: 'guests',
         name: 'guests',
         component: () => import('@/views/GuestsList.vue'),
         meta: { roles: ['manager', 'reception'], title: 'Mehmonlar' }
+      },
+      {
+        path: 'guests/:id',
+        name: 'guest-page',
+        component: () => import('@/views/GuestPage.vue'),
+        meta: { roles: ['manager', 'reception'], title: 'Mehmon' }
       },
       {
         path: 'guests/history/:phone',
@@ -47,7 +53,7 @@ const routes: RouteRecordRaw[] = [
         path: 'orders',
         name: 'orders',
         component: () => import('@/views/OrdersList.vue'),
-        meta: { roles: ['manager', 'reception'], title: 'Xona xizmati' }
+        meta: { roles: ['manager', 'reception', 'kitchen'], title: 'Buyurtmalar' }
       },
       {
         path: 'housekeeping',
@@ -71,13 +77,19 @@ const routes: RouteRecordRaw[] = [
         path: 'menu',
         name: 'menu',
         component: () => import('@/views/MenuList.vue'),
-        meta: { roles: ['manager'], title: 'Menyu' }
+        meta: { roles: ['manager', 'kitchen'], title: 'Menyu' }
       },
       {
         path: 'audit-logs',
         name: 'audit-logs',
         component: () => import('@/views/AuditLogs.vue'),
         meta: { roles: ['manager'], title: 'Audit log' }
+      },
+      {
+        path: 'infrastructure',
+        name: 'infrastructure',
+        component: () => import('@/views/Infrastructure.vue'),
+        meta: { roles: ['manager'], title: 'Infratuzilma' }
       }
     ]
   },
@@ -115,6 +127,7 @@ router.beforeEach((to) => {
     // Redirect each role to their home page
     if (auth.role === 'technician') return { name: 'maintenance' }
     if (auth.role === 'cleaner') return { name: 'housekeeping' }
+    if (auth.role === 'kitchen') return { name: 'orders' }
     return { name: 'dashboard' }
   }
   return true

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { useAuthStore } from '@/stores/auth'
 import { useWsStore } from '@/stores/ws'
 import { Loader2 } from 'lucide-vue-next'
@@ -20,12 +21,14 @@ const phone = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
+const shaking = ref(false)
 
 const demoUsers = [
   { role: 'Manager', phone: '+998901111111', password: 'manager123' },
   { role: 'Reception', phone: '+998902222222', password: 'reception123' },
   { role: 'Technician', phone: '+998903333333', password: 'technician123' },
   { role: 'Cleaner', phone: '+998904444444', password: 'cleaner123' },
+  { role: 'Kitchen', phone: '+998905555555', password: 'kitchen123' },
 ]
 
 function fillCredentials(u: { phone: string; password: string }) {
@@ -47,7 +50,16 @@ async function submit() {
       }
     } else {
       const next = (route.query.next as string) || '/'
-      router.replace(next)
+      // Roles that don't have dashboard access — send them to their home
+      if (next === '/' && auth.role === 'kitchen') {
+        router.replace('/orders')
+      } else if (next === '/' && auth.role === 'technician') {
+        router.replace('/maintenance')
+      } else if (next === '/' && auth.role === 'cleaner') {
+        router.replace('/housekeeping')
+      } else {
+        router.replace(next)
+      }
     }
   } catch (e: unknown) {
     const err = e as {
@@ -75,6 +87,9 @@ async function submit() {
     } else {
       error.value = data?.message ?? 'Tizimga kirishda xatolik yuz berdi'
     }
+    // Shake animation on error
+    shaking.value = true
+    setTimeout(() => { shaking.value = false }, 300)
   } finally {
     loading.value = false
   }
@@ -83,64 +98,90 @@ async function submit() {
 
 <template>
   <BlankLayout>
-    <Card class="w-full max-w-sm">
-      <CardHeader class="text-center">
-        <div class="mx-auto w-12 h-12 rounded-xl bg-primary text-primary-foreground grid place-items-center font-bold text-lg shadow-sm mb-2">
-          H
-        </div>
-        <CardTitle class="text-xl">Tizimga kirish</CardTitle>
-        <CardDescription>HotelOS boshqaruv paneli</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form @submit.prevent="submit" class="space-y-4" novalidate>
-          <div class="space-y-2">
-            <Label for="phone">Telefon raqami</Label>
-            <Input
-              id="phone"
-              v-model="phone"
-              type="tel"
-              autocomplete="username"
-              inputmode="tel"
-              placeholder="+998901234567"
-            />
-          </div>
-          <div class="space-y-2">
-            <Label for="password">Parol</Label>
-            <Input
-              id="password"
-              v-model="password"
-              type="password"
-              autocomplete="current-password"
-              placeholder="••••••••"
-            />
-          </div>
+    <!-- Theme toggle top-right -->
+    <div class="fixed top-4 right-4 z-50">
+      <ThemeToggle />
+    </div>
 
-          <div v-if="error" class="rounded-md bg-destructive/10 text-destructive text-sm p-3" role="alert">
-            {{ error }}
+    <Card
+      class="w-full max-w-sm border-border/50 shadow-lg"
+      :class="{ 'animate-shake': shaking }"
+    >
+        <CardHeader class="text-center space-y-2">
+          <div class="mx-auto w-14 h-14 rounded-xl bg-primary text-primary-foreground grid place-items-center font-bold text-xl shadow-md">
+            H
           </div>
+          <CardTitle class="text-2xl tracking-tight">Tizimga kirish</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form @submit.prevent="submit" class="space-y-4" novalidate>
+            <div class="space-y-2">
+              <Label for="phone">Telefon raqami</Label>
+              <Input
+                id="phone"
+                v-model="phone"
+                type="tel"
+                autocomplete="username"
+                inputmode="tel"
+                placeholder="+998901234567"
+                class="h-10"
+                :disabled="loading"
+              />
+            </div>
+            <div class="space-y-2">
+              <Label for="password">Parol</Label>
+              <Input
+                id="password"
+                v-model="password"
+                type="password"
+                autocomplete="current-password"
+                placeholder="••••••••"
+                class="h-10"
+                :disabled="loading"
+              />
+            </div>
 
-          <Button type="submit" class="w-full" :disabled="loading">
-            <Loader2 v-if="loading" class="w-4 h-4 mr-2 animate-spin" />
-            {{ loading ? 'Kirilmoqda…' : 'Kirish' }}
-          </Button>
-        </form>
-      </CardContent>
-      <CardFooter class="flex-col gap-3">
-        <Separator />
-        <p class="text-xs text-muted-foreground">Demo foydalanuvchilar:</p>
-        <div class="flex flex-wrap gap-2">
-          <Button
-            v-for="u in demoUsers"
-            :key="u.role"
-            variant="outline"
-            size="xs"
-            type="button"
-            @click="fillCredentials(u)"
-          >
-            {{ u.role }}
-          </Button>
-        </div>
-      </CardFooter>
-    </Card>
+            <div
+              v-if="error"
+              class="rounded-lg border border-destructive/20 bg-destructive/5 text-destructive text-sm p-3 border-l-4 border-l-destructive"
+              role="alert"
+            >
+              {{ error }}
+            </div>
+
+            <Button type="submit" class="w-full h-10" :disabled="loading">
+              <Loader2 v-if="loading" class="w-4 h-4 mr-2 animate-spin" />
+              {{ loading ? 'Kirilmoqda…' : 'Kirish' }}
+            </Button>
+          </form>
+        </CardContent>
+        <CardFooter class="flex-col gap-3">
+          <Separator />
+          <div class="space-y-2">
+            <div class="flex gap-2">
+              <button
+                v-for="u in demoUsers.slice(0, 2)"
+                :key="u.role"
+                type="button"
+                class="flex-1 inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-medium bg-muted text-muted-foreground hover:bg-accent hover:text-foreground hover:shadow-xs transition-all duration-150 cursor-pointer"
+                @click="fillCredentials(u)"
+              >
+                {{ u.role }}
+              </button>
+            </div>
+            <div class="flex gap-2">
+              <button
+                v-for="u in demoUsers.slice(2)"
+                :key="u.role"
+                type="button"
+                class="flex-1 inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-medium bg-muted text-muted-foreground hover:bg-accent hover:text-foreground hover:shadow-xs transition-all duration-150 cursor-pointer"
+                @click="fillCredentials(u)"
+              >
+                {{ u.role }}
+              </button>
+            </div>
+          </div>
+        </CardFooter>
+      </Card>
   </BlankLayout>
 </template>

@@ -15,6 +15,7 @@ import CheckInForm from './CheckInForm.vue'
 import RoomDetail from './RoomDetail.vue'
 import { receptionApi, type Proximity, type Room, type RoomType } from '@/api/reception'
 import { useRoomsStore } from '@/stores/rooms'
+import { useMaintenanceStore } from '@/stores/maintenance'
 import { useWsStore } from '@/stores/ws'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
@@ -35,6 +36,7 @@ import {
 } from 'lucide-vue-next'
 
 const rooms = useRoomsStore()
+const maintenance = useMaintenanceStore()
 const ws = useWsStore()
 const auth = useAuthStore()
 const toast = useToastStore()
@@ -176,6 +178,13 @@ async function saveBulk() {
 const filterStatus = ref('all')
 const filterType = ref('all')
 
+const statusFilters = [
+  { v: 'all', l: 'Barchasi' },
+  { v: 'available', l: "Bo'sh" },
+  { v: 'occupied', l: 'Band' },
+  { v: 'out_of_service', l: 'Xizmatdan tashqari' },
+]
+
 const TYPE_UZ: Record<string, string> = {
   single: 'Bir kishilik',
   double: 'Ikki kishilik',
@@ -193,7 +202,7 @@ const CLEANLINESS_UZ: Record<string, string> = {
   clean: 'Toza',
   dirty: 'Iflos',
   cleaning: 'Tozalanmoqda',
-  maintenance: 'Texnik xizmat'
+  maintenance: 'Nosozlik'
 }
 
 const visible = computed(() =>
@@ -213,7 +222,10 @@ const counts = computed(() => {
   return { total, available, occupied, cleaning, maintenance }
 })
 
-onMounted(() => rooms.load())
+onMounted(() => {
+  rooms.load()
+  maintenance.load(auth.role || undefined)
+})
 
 watch(
   () => ws.lastEvent,
@@ -225,6 +237,15 @@ watch(
 
 function isAssignable(r: Room) {
   return r.status === 'available' && r.cleanliness_status === 'clean'
+}
+
+function maintenanceStatus(r: Room): string | null {
+  if (r.cleanliness_status !== 'maintenance') return null
+  const issue = maintenance.open.find(i => i.room_id === r.id)
+  if (!issue) return 'Nosozlik'
+  if (issue.status === 'reported') return 'Tayinlanmagan'
+  if (issue.status === 'assigned') return 'Tayinlangan'
+  return 'Nosozlik'
 }
 
 function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
@@ -323,7 +344,19 @@ async function confirmDelete() {
 }
 
 function openCheckInForRoom(r: Room) {
-  if (!canCheckIn.value || !isAssignable(r)) return
+  if (!canCheckIn.value) return
+  if (r.status === 'occupied') {
+    toast.info(`#${r.room_number} band — avval mehmonni chiqaring`)
+    return
+  }
+  if (r.status === 'out_of_service') {
+    toast.info(`#${r.room_number} xizmatdan tashqari`)
+    return
+  }
+  if (r.cleanliness_status !== 'clean') {
+    toast.info(`#${r.room_number} hali tozalanmagan (${CLEANLINESS_UZ[r.cleanliness_status] || r.cleanliness_status})`)
+    return
+  }
   checkInRoom.value = r
   checkInOpen.value = true
 }
@@ -343,7 +376,7 @@ function onCheckInSuccess() {
 <template>
   <div class="space-y-6">
     <!-- Stat cards -->
-    <div class="grid grid-cols-5 gap-3">
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
       <template v-if="rooms.loading && !rooms.rooms.length">
         <Card v-for="i in 5" :key="i">
           <CardContent class="p-3 text-center space-y-1">
@@ -353,35 +386,35 @@ function onCheckInSuccess() {
         </Card>
       </template>
       <template v-else>
-        <Card>
-          <CardContent class="p-3 text-center">
-            <p class="text-xl font-bold">{{ counts.total }}</p>
-            <p class="text-[11px] text-muted-foreground">Jami</p>
-          </CardContent>
+        <Card class="h-20 flex items-center justify-center">
+          <div class="text-center">
+            <p class="text-xl font-bold tracking-tighter tabular-nums">{{ counts.total }}</p>
+            <p class="text-[11px] uppercase text-muted-foreground tracking-wider">Jami</p>
+          </div>
         </Card>
-        <Card>
-          <CardContent class="p-3 text-center">
-            <p class="text-xl font-bold text-green-600">{{ counts.available }}</p>
-            <p class="text-[11px] text-muted-foreground">Bo'sh</p>
-          </CardContent>
+        <Card class="h-20 flex items-center justify-center">
+          <div class="text-center">
+            <p class="text-xl font-bold tracking-tighter tabular-nums text-green-600">{{ counts.available }}</p>
+            <p class="text-[11px] uppercase text-muted-foreground tracking-wider">Bo'sh</p>
+          </div>
         </Card>
-        <Card>
-          <CardContent class="p-3 text-center">
-            <p class="text-xl font-bold text-primary">{{ counts.occupied }}</p>
-            <p class="text-[11px] text-muted-foreground">Band</p>
-          </CardContent>
+        <Card class="h-20 flex items-center justify-center">
+          <div class="text-center">
+            <p class="text-xl font-bold tracking-tighter tabular-nums text-primary">{{ counts.occupied }}</p>
+            <p class="text-[11px] uppercase text-muted-foreground tracking-wider">Band</p>
+          </div>
         </Card>
-        <Card>
-          <CardContent class="p-3 text-center">
-            <p class="text-xl font-bold text-amber-600">{{ counts.cleaning }}</p>
-            <p class="text-[11px] text-muted-foreground">Tozalanmoqda</p>
-          </CardContent>
+        <Card class="h-20 flex items-center justify-center">
+          <div class="text-center">
+            <p class="text-xl font-bold tracking-tighter tabular-nums text-amber-600">{{ counts.cleaning }}</p>
+            <p class="text-[11px] uppercase text-muted-foreground tracking-wider">Tozalanmoqda</p>
+          </div>
         </Card>
-        <Card>
-          <CardContent class="p-3 text-center">
-            <p class="text-xl font-bold text-destructive">{{ counts.maintenance }}</p>
-            <p class="text-[11px] text-muted-foreground">Texnik xizmatda</p>
-          </CardContent>
+        <Card class="h-20 flex items-center justify-center">
+          <div class="text-center">
+            <p class="text-xl font-bold tracking-tighter tabular-nums text-destructive">{{ counts.maintenance }}</p>
+            <p class="text-[11px] uppercase text-muted-foreground tracking-wider">Texnik</p>
+          </div>
         </Card>
       </template>
     </div>
@@ -391,7 +424,7 @@ function onCheckInSuccess() {
       <CardContent class="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div class="flex gap-3">
           <Select v-model="filterStatus">
-            <SelectTrigger class="w-[160px]">
+            <SelectTrigger class="w-[180px]">
               <SelectValue placeholder="Holat" />
             </SelectTrigger>
             <SelectContent>
@@ -399,18 +432,6 @@ function onCheckInSuccess() {
               <SelectItem value="available">Bo'sh</SelectItem>
               <SelectItem value="occupied">Band</SelectItem>
               <SelectItem value="out_of_service">Xizmatdan tashqari</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select v-model="filterType">
-            <SelectTrigger class="w-[160px]">
-              <SelectValue placeholder="Turi" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Barcha turlar</SelectItem>
-              <SelectItem value="single">Bir kishilik</SelectItem>
-              <SelectItem value="double">Ikki kishilik</SelectItem>
-              <SelectItem value="suite">Lyuks</SelectItem>
-              <SelectItem value="accessible">Nogironlar uchun</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -460,8 +481,14 @@ function onCheckInSuccess() {
         v-for="r in visible"
         :key="r.id"
         :class="cn(
-          'transition-all duration-200',
-          canCheckIn && isAssignable(r) && 'cursor-pointer hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5'
+          'transition-all duration-200 border-l-2',
+          r.status === 'available' && r.cleanliness_status === 'clean' ? 'border-l-green-500' :
+          r.status === 'occupied' ? 'border-l-blue-500' :
+          r.cleanliness_status === 'cleaning' ? 'border-l-amber-400' :
+          r.cleanliness_status === 'maintenance' || r.status === 'out_of_service' ? 'border-l-red-500' :
+          'border-l-muted',
+          canCheckIn && 'cursor-pointer',
+          canCheckIn && isAssignable(r) && 'hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5'
         )"
         @click="openCheckInForRoom(r)"
       >
@@ -513,8 +540,14 @@ function onCheckInSuccess() {
           <p v-if="canCheckIn && isAssignable(r)" class="text-xs font-medium text-primary">
             Mehmon qabul qilish →
           </p>
-          <p v-else-if="r.status === 'occupied'" class="text-xs font-medium text-amber-600">
+          <p v-else-if="canCheckIn && r.status === 'occupied'" class="text-xs font-medium text-blue-600">
             Band
+          </p>
+          <p v-else-if="canCheckIn && r.status === 'available' && r.cleanliness_status === 'maintenance'" class="text-xs font-medium" :class="maintenanceStatus(r) === 'Tayinlanmagan' ? 'text-red-600' : 'text-amber-600'">
+            🔧 {{ maintenanceStatus(r) }}
+          </p>
+          <p v-else-if="canCheckIn && r.status === 'available' && r.cleanliness_status !== 'clean'" class="text-xs font-medium text-amber-600">
+            {{ CLEANLINESS_UZ[r.cleanliness_status] || r.cleanliness_status }}
           </p>
         </CardContent>
       </Card>

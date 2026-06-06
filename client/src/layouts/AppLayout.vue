@@ -3,9 +3,12 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useWsStore } from '@/stores/ws'
+import { useTheme } from '@/composables/useTheme'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetTrigger, SheetContent } from '@/components/ui/sheet'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import {
@@ -23,6 +26,7 @@ import {
   WifiOff,
   PanelLeftClose,
   PanelLeftOpen,
+  Server,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -31,25 +35,29 @@ const auth = useAuthStore()
 const ws = useWsStore()
 const mobileOpen = ref(false)
 const sidebarCollapsed = ref(false)
+const { theme } = useTheme()
+const { isMobile } = useBreakpoint()
 
 interface NavItem { to: string; label: string; roles: string[]; icon: any }
 
 const NAV: NavItem[] = [
-  { to: '/',              label: 'Boshqaruv paneli', roles: ['manager', 'reception', 'cleaner'], icon: LayoutDashboard },
-  { to: '/rooms',         label: 'Xonalar',          roles: ['manager', 'reception', 'cleaner', 'technician'], icon: DoorOpen },
+  { to: '/',              label: 'Boshqaruv paneli', roles: ['manager', 'reception'], icon: LayoutDashboard },
+  { to: '/rooms',         label: 'Xonalar',          roles: ['manager', 'reception', 'cleaner', 'technician', 'kitchen'], icon: DoorOpen },
   { to: '/guests',        label: 'Mehmonlar',        roles: ['manager', 'reception'], icon: Users },
-  { to: '/orders',        label: 'Xona xizmati',     roles: ['manager', 'reception'], icon: UtensilsCrossed },
+  { to: '/orders',        label: 'Buyurtmalar',      roles: ['manager', 'reception', 'kitchen'], icon: UtensilsCrossed },
   { to: '/housekeeping',  label: 'Tozalash',         roles: ['manager', 'cleaner'], icon: Sparkles },
   { to: '/maintenance',   label: 'Texnik xizmat',    roles: ['manager', 'technician', 'reception'], icon: Wrench },
   { to: '/staff',         label: 'Xodimlar',         roles: ['manager'], icon: UserCog },
   { to: '/audit-logs',    label: 'Audit log',        roles: ['manager'], icon: ScrollText },
+  { to: '/infrastructure', label: 'Infratuzilma',    roles: ['manager'], icon: Server },
 ]
 
 const ROLE_UZ: Record<string, string> = {
   manager: 'Boshqaruvchi',
   reception: 'Qabulchi',
   technician: 'Texnik',
-  cleaner: 'Tozalovchi'
+  cleaner: 'Tozalovchi',
+  kitchen: 'Oshpaz',
 }
 
 const items = computed(() =>
@@ -93,7 +101,7 @@ function navigateMobile(to: string) {
     <!-- Desktop Sidebar -->
     <aside
       :class="cn(
-        'hidden md:flex flex-col border-r bg-card transition-all duration-200',
+        'hidden md:flex flex-col border-r transition-all duration-200 dark:bg-card',
         sidebarCollapsed ? 'w-16' : 'w-64'
       )"
     >
@@ -113,11 +121,11 @@ function navigateMobile(to: string) {
           :to="item.to"
           :title="sidebarCollapsed ? item.label : undefined"
           :class="cn(
-            'flex items-center rounded-md transition-colors cursor-pointer',
-            sidebarCollapsed ? 'justify-center h-10 w-full' : 'gap-3 px-3 py-2.5 text-sm font-medium',
+            'flex items-center rounded-lg transition-all duration-150 cursor-pointer relative',
+            sidebarCollapsed ? 'justify-center h-8 w-full' : 'gap-3 px-3 h-8 text-sm font-medium',
             isActive(item.to)
-              ? 'bg-primary/10 text-primary'
-              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              ? 'text-primary before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-primary before:rounded-full'
+              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
           )"
         >
           <component :is="item.icon" :class="sidebarCollapsed ? 'w-5 h-5' : 'w-4 h-4'" />
@@ -126,15 +134,14 @@ function navigateMobile(to: string) {
       </nav>
 
       <!-- Collapse toggle -->
-      <div class="border-t p-2">
+      <div class="border-t p-2 flex items-center" :class="sidebarCollapsed ? 'justify-center' : 'justify-between'">
+        <ThemeToggle v-if="!sidebarCollapsed" />
         <Button
           variant="ghost"
-          :size="sidebarCollapsed ? 'icon-sm' : 'sm'"
-          :class="sidebarCollapsed ? 'w-full justify-center' : 'w-full justify-start gap-2'"
+          :size="sidebarCollapsed ? 'icon-sm' : 'icon-sm'"
           @click="sidebarCollapsed = !sidebarCollapsed"
         >
           <component :is="sidebarCollapsed ? PanelLeftOpen : PanelLeftClose" class="w-4 h-4" />
-          <span v-if="!sidebarCollapsed" class="text-xs text-muted-foreground">Yig'ish</span>
         </Button>
       </div>
     </aside>
@@ -142,7 +149,7 @@ function navigateMobile(to: string) {
     <!-- Main Content -->
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Top bar -->
-      <header class="h-16 border-b bg-card flex items-center justify-between px-4 md:px-6 shrink-0">
+      <header class="h-14 border-b flex items-center justify-between px-4 md:px-6 shrink-0">
         <div class="flex items-center gap-3">
           <!-- Mobile menu trigger -->
           <Sheet v-model:open="mobileOpen">
@@ -192,8 +199,9 @@ function navigateMobile(to: string) {
           <h1 class="text-base font-semibold tracking-tight">{{ currentTitle }}</h1>
         </div>
 
-        <!-- Right: profile dropdown -->
-        <div class="flex items-center gap-3">
+        <!-- Right: theme toggle + profile dropdown -->
+        <div class="flex items-center gap-2">
+          <ThemeToggle class="hidden sm:flex" />
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button variant="ghost" class="flex items-center gap-2 h-auto py-1.5 px-2 cursor-pointer">
@@ -223,7 +231,11 @@ function navigateMobile(to: string) {
 
       <!-- Page content -->
       <main class="flex-1 overflow-y-auto p-4 md:p-6">
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <Transition name="fade" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </RouterView>
       </main>
     </div>
   </div>

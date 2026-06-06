@@ -13,6 +13,7 @@ from typing import Iterable
 ROLE_CHANNELS: dict[str, list[str]] = {
     "manager":   ["rooms.*", "guests.*", "orders.*", "bills.*", "maintenance.*", "housekeeping.*", "reservations.*"],
     "reception": ["rooms.*", "guests.*", "orders.*", "maintenance.*", "reservations.*"],
+    "kitchen":   ["orders.*"],
     "technician": ["maintenance.*", "rooms.status"],
     "cleaner":    ["rooms.*", "housekeeping.*"],
     # Guests get order + maintenance + cleaning events, but only for their own

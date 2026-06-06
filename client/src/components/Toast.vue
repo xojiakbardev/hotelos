@@ -32,9 +32,12 @@ function dotColor(kind: string) {
 </template>
 
 <style scoped>
-.toast-enter-from { opacity: 0; transform: translateX(20px); }
-.toast-enter-active, .toast-leave-active {
-  transition: opacity 150ms ease, transform 150ms ease;
+.toast-enter-from { opacity: 0; transform: translateY(-8px); }
+.toast-enter-active {
+  transition: opacity 200ms ease, transform 200ms ease;
 }
-.toast-leave-to { opacity: 0; transform: translateX(20px); }
+.toast-leave-active {
+  transition: opacity 100ms ease, transform 100ms ease;
+}
+.toast-leave-to { opacity: 0; transform: translateY(-8px); }
 </style>

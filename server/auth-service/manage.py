@@ -101,6 +101,7 @@ def seedusers() -> None:
         (settings.seed_reception_phone, settings.seed_reception_password, UserRole.RECEPTION, "Demo Reception"),
         (settings.seed_technician_phone, settings.seed_technician_password, UserRole.TECHNICIAN, "Demo Technician"),
         (settings.seed_cleaner_phone, settings.seed_cleaner_password, UserRole.CLEANER, "Demo Cleaner"),
+        (settings.seed_kitchen_phone, settings.seed_kitchen_password, UserRole.KITCHEN, "Demo Kitchen"),
     ]
 
     async def _run() -> None:

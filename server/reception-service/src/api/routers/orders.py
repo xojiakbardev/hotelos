@@ -30,7 +30,7 @@ from src.services.order_lifecycle import IllegalTransition, next_status
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
-CAN_WORK = (UserRole.MANAGER, UserRole.RECEPTION)
+CAN_WORK = (UserRole.MANAGER, UserRole.RECEPTION, UserRole.KITCHEN)
 
 
 def _status_to_channel(s: OrderStatus) -> str:

@@ -33,9 +33,10 @@ async def lifespan(app: FastAPI):
     subscriber = EventSubscriber(app.state.redis)
     # The same enqueue handler serves both events — the brief calls for
     # rooms to be re-cleaned after both a guest check-out AND a completed
-    # maintenance job.
+    # maintenance job. Also handles cleaning_requested (freshness decay, manual).
     enqueue = make_on_room_vacated(app.state.publisher)
     subscriber.on(Channels.ROOM_VACATED, enqueue)
+    subscriber.on(Channels.ROOM_CLEANING_REQUESTED, enqueue)
     subscriber.on(Channels.MAINTENANCE_RESOLVED, enqueue)
     subscriber.on(
         Channels.GUEST_DND_CHANGED,

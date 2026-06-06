@@ -12,7 +12,7 @@ export const useStaffStore = defineStore('staff', {
   getters: {
     byRole: (s) => (role: Role) => s.users.filter((u) => u.role === role),
     counts: (s) => {
-      const c: Record<Role, number> = { manager: 0, reception: 0, technician: 0, cleaner: 0, guest: 0 }
+      const c: Record<Role, number> = { manager: 0, reception: 0, technician: 0, cleaner: 0, kitchen: 0, guest: 0 }
       for (const u of s.users) c[u.role] += 1
       return c
     }

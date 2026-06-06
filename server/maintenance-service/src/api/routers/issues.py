@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
 from src.api.dependencies import (
     CurrentUserDep,
@@ -123,6 +124,49 @@ async def assign_to_me(
             "room_id": str(snapshot.room_id),
             "room_number": snapshot.room_number,
             "technician_user_id": user.id,
+            "assigned_at": snapshot.assigned_at.isoformat() if snapshot.assigned_at else None,
+        },
+    )
+    return snapshot
+
+
+class AssignToPayload(BaseModel):
+    technician_id: str
+
+
+@router.post("/issues/{issue_id}/assign", response_model=IssueOut)
+async def assign_to_technician(
+    issue_id: uuid.UUID,
+    payload: AssignToPayload,
+    session: SessionDep,
+    publisher: PublisherDep,
+    user: CurrentUserDep,
+    _=Depends(require_role(UserRole.MANAGER)),
+) -> IssueOut:
+    """Manager assigns an issue to a specific technician."""
+    repo = IssueRepository(session)
+    async with session.begin():
+        issue = await repo.get(issue_id)
+        if issue is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="issue not found")
+        if issue.status not in (IssueStatus.REPORTED.value,):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "wrong_state",
+                    "message": f"cannot assign issue in status '{issue.status}'",
+                },
+            )
+        await repo.mark_assigned(issue, technician_id=uuid.UUID(payload.technician_id))
+        snapshot = IssueOut.model_validate(issue, from_attributes=True)
+
+    await publisher.publish(
+        channel=Channels.MAINTENANCE_ASSIGNED,
+        payload={
+            "issue_id": str(snapshot.id),
+            "room_id": str(snapshot.room_id),
+            "room_number": snapshot.room_number,
+            "technician_user_id": payload.technician_id,
             "assigned_at": snapshot.assigned_at.isoformat() if snapshot.assigned_at else None,
         },
     )

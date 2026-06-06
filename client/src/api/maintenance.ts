@@ -35,6 +35,8 @@ export const maintenanceApi = {
     api.post<Issue>('/maintenance/issues', payload).then((r) => r.data),
   claim: (issueId: string) =>
     api.post<Issue>(`/maintenance/issues/${issueId}/assign-me`).then((r) => r.data),
+  assign: (issueId: string, technicianId: string) =>
+    api.post<Issue>(`/maintenance/issues/${issueId}/assign`, { technician_id: technicianId }).then((r) => r.data),
   resolve: (issueId: string) =>
     api.post<Issue>(`/maintenance/issues/${issueId}/resolve`).then((r) => r.data)
 }
