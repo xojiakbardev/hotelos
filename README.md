@@ -66,6 +66,7 @@ Open **http://localhost:8080** and log in with one of the demo credentials below
 | Reception | `+998902222222` | `reception123` |
 | Technician | `+998903333333` | `technician123` |
 | Cleaner | `+998904444444` | `cleaner123` |
+| Kitchen | `+998905555555` | `kitchen123` |
 
 > Defined in `.env`. Change them before showing the system to anyone outside the assessor.
 
@@ -74,6 +75,12 @@ Open **http://localhost:8080** and log in with one of the demo credentials below
 ```bash
 # View one service's logs
 docker compose logs -f reception-service
+
+# Seed demo users (run after first `docker compose up`)
+docker compose exec auth-service python manage.py seedusers
+
+# Create a single manager interactively
+docker compose exec auth-service python manage.py createmanager
 
 # Generate a new migration for one service
 docker compose exec reception-service python manage.py makemigrations "add rooms table"
@@ -84,8 +91,13 @@ docker compose exec reception-service python manage.py migrate
 # Run tests inside a service (once tests exist)
 docker compose exec auth-service pytest
 
-# Tear everything down (including volumes)
+# Tear everything down (including volumes — resets DB)
 docker compose down -v
+
+# Full rebuild from scratch (clean start)
+docker compose down -v --rmi local
+docker compose up --build -d
+docker compose exec auth-service python manage.py seedusers
 ```
 
 ## Project layout
