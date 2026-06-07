@@ -211,10 +211,29 @@ async function submitCleaning() {
             </Button>
             <div v-if="!store.orders.length" class="text-center py-8 text-muted-foreground text-sm">Hali buyurtmalar yo'q</div>
             <Card v-for="order in store.orders" :key="order.id">
-              <CardContent class="p-4 space-y-2">
+              <CardContent class="p-4 space-y-3">
                 <div class="flex items-center justify-between">
                   <Badge :variant="statusVariant(order.status)">{{ statusLabel(order.status) }}</Badge>
                   <span class="font-semibold tabular-nums">{{ money(order.total_minor_units) }}</span>
+                </div>
+                <!-- Progress pipeline -->
+                <div class="flex items-center gap-1">
+                  <div v-for="(step, idx) in ['received','preparing','delivering','delivered']" :key="step" class="flex items-center gap-1 flex-1">
+                    <div
+                      class="h-1.5 flex-1 rounded-full transition-all"
+                      :class="
+                        ['received','preparing','delivering','delivered'].indexOf(order.status) >= idx
+                          ? 'bg-primary'
+                          : 'bg-muted'
+                      "
+                    />
+                  </div>
+                </div>
+                <div class="flex justify-between text-[10px] text-muted-foreground">
+                  <span>Qabul</span>
+                  <span>Tayyorlanmoqda</span>
+                  <span>Yetkazilmoqda</span>
+                  <span>Tayyor</span>
                 </div>
                 <div class="flex flex-wrap gap-1">
                   <Badge v-for="item in order.items" :key="item.name" variant="secondary" class="text-xs">{{ item.name }} ×{{ item.qty }}</Badge>

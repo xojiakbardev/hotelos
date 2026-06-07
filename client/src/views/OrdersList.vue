@@ -99,6 +99,14 @@ const NEXT_LABEL: Record<OrderStatus, string | null> = {
 
 function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
 
+function timeSince(iso: string) {
+  const ms = Date.now() - new Date(iso).getTime()
+  const min = Math.floor(ms / 60000)
+  if (min < 1) return 'hozirgina'
+  if (min < 60) return `${min} daq`
+  return `${Math.floor(min / 60)}s ${min % 60}d`
+}
+
 function orderStatusVariant(s: OrderStatus): 'warning' | 'default' | 'success' | 'secondary' {
   if (s === 'received') return 'warning'
   if (s === 'preparing' || s === 'delivering') return 'default'
@@ -251,55 +259,138 @@ async function deleteMenuItem(item: MenuItem) {
         </div>
 
         <div v-if="store.error" class="rounded-md bg-destructive/10 text-destructive text-sm p-4">{{ store.error }}</div>
-        <div v-if="store.loading && !store.orders.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card v-for="i in 3" :key="i">
+        <div v-if="store.loading && !store.orders.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card v-for="i in 4" :key="i">
             <CardContent class="p-4 space-y-3">
-              <div class="flex items-center justify-between">
-                <Skeleton class="h-5 w-20" />
-                <Skeleton class="h-5 w-24 rounded-full" />
-              </div>
-              <div class="space-y-2">
-                <Skeleton class="h-4 w-full" />
-                <Skeleton class="h-4 w-3/4" />
-              </div>
-              <div class="flex justify-between border-t pt-3">
-                <Skeleton class="h-5 w-20" />
-                <Skeleton class="h-8 w-24 rounded-md" />
-              </div>
+              <Skeleton class="h-5 w-24" />
+              <Skeleton class="h-20 w-full" />
             </CardContent>
           </Card>
         </div>
-        <div v-else-if="!store.open.length" class="text-center py-8 text-muted-foreground">Ochiq buyurtmalar yo'q.</div>
+        <div v-else-if="!store.orders.length" class="text-center py-8 text-muted-foreground">Ochiq buyurtmalar yo'q.</div>
 
-        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card
-            v-for="o in store.open"
-            :key="o.id"
-            :class="cn('transition-all duration-200 hover:shadow-md',
-              o.status === 'received' && 'border-l-4 border-l-amber-400',
-              o.status === 'preparing' && 'border-l-4 border-l-primary',
-              o.status === 'delivering' && 'border-l-4 border-l-green-500'
-            )"
-          >
-            <CardContent class="p-4 space-y-3">
-              <div class="flex items-center justify-between">
-                <span class="font-semibold">#{{ o.room_number }} <span class="text-muted-foreground font-normal text-sm">/ {{ o.floor }}q</span></span>
-                <Badge :variant="orderStatusVariant(o.status)">{{ ORDER_STATUS_UZ[o.status] || o.status }}</Badge>
-              </div>
-              <ul class="space-y-1">
-                <li v-for="(item, idx) in o.items" :key="idx" class="flex justify-between text-sm">
-                  <span><span class="text-muted-foreground tabular-nums">{{ item.qty }}×</span> {{ item.name }}</span>
-                  <span class="text-muted-foreground tabular-nums">{{ money(item.qty * item.price_minor_units) }}</span>
-                </li>
-              </ul>
-              <div class="flex items-center justify-between border-t pt-3">
-                <span class="font-semibold tabular-nums">{{ money(o.total_minor_units) }}</span>
-                <Button v-if="canWork && NEXT_LABEL[o.status]" size="sm" @click="advance(o)">
-                  {{ NEXT_LABEL[o.status] }}
+        <!-- Kanban Board -->
+        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <!-- Yangi (received) -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-amber-200 dark:border-amber-900">
+              <Clock class="w-4 h-4 text-amber-600" />
+              <span class="text-sm font-semibold">Yangi</span>
+              <Badge variant="warning" class="text-[10px] ml-auto">{{ store.orders.filter(o => o.status === 'received').length }}</Badge>
+            </div>
+            <Card
+              v-for="o in store.orders.filter(o => o.status === 'received')"
+              :key="o.id"
+              class="border-l-3 border-l-amber-400"
+            >
+              <CardContent class="p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono font-bold text-sm">#{{ o.room_number }}</span>
+                  <span class="text-[10px] text-muted-foreground">{{ timeSince(o.received_at) }}</span>
+                </div>
+                <ul class="space-y-0.5">
+                  <li v-for="item in o.items" :key="item.name" class="text-xs flex justify-between">
+                    <span><span class="text-muted-foreground">{{ item.qty }}×</span> {{ item.name }}</span>
+                    <span class="text-muted-foreground font-mono">{{ money(item.qty * item.price_minor_units) }}</span>
+                  </li>
+                </ul>
+                <div class="flex items-center justify-between pt-2 border-t">
+                  <span class="text-sm font-semibold">{{ money(o.total_minor_units) }}</span>
+                  <Button v-if="canWork" size="xs" @click="advance(o)">
+                    <ChefHat class="w-3 h-3 mr-1" />
+                    Tayyorlash
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+            <p v-if="!store.orders.filter(o => o.status === 'received').length" class="text-xs text-muted-foreground text-center py-4">—</p>
+          </div>
+
+          <!-- Tayyorlanmoqda (preparing) -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-blue-200 dark:border-blue-900">
+              <ChefHat class="w-4 h-4 text-blue-600" />
+              <span class="text-sm font-semibold">Tayyorlanmoqda</span>
+              <Badge variant="default" class="text-[10px] ml-auto">{{ store.orders.filter(o => o.status === 'preparing').length }}</Badge>
+            </div>
+            <Card
+              v-for="o in store.orders.filter(o => o.status === 'preparing')"
+              :key="o.id"
+              class="border-l-3 border-l-blue-500"
+            >
+              <CardContent class="p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono font-bold text-sm">#{{ o.room_number }}</span>
+                  <span class="text-[10px] text-muted-foreground">{{ timeSince(o.preparing_at || o.received_at) }}</span>
+                </div>
+                <ul class="space-y-0.5">
+                  <li v-for="item in o.items" :key="item.name" class="text-xs">
+                    <span class="text-muted-foreground">{{ item.qty }}×</span> {{ item.name }}
+                  </li>
+                </ul>
+                <Button v-if="canWork" size="xs" variant="outline" class="w-full" @click="advance(o)">
+                  <Truck class="w-3 h-3 mr-1" />
+                  Yetkazishga tayyor
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+            <p v-if="!store.orders.filter(o => o.status === 'preparing').length" class="text-xs text-muted-foreground text-center py-4">—</p>
+          </div>
+
+          <!-- Yetkazilmoqda (delivering) -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-indigo-200 dark:border-indigo-900">
+              <Truck class="w-4 h-4 text-indigo-600" />
+              <span class="text-sm font-semibold">Yetkazilmoqda</span>
+              <Badge variant="secondary" class="text-[10px] ml-auto">{{ store.orders.filter(o => o.status === 'delivering').length }}</Badge>
+            </div>
+            <Card
+              v-for="o in store.orders.filter(o => o.status === 'delivering')"
+              :key="o.id"
+              class="border-l-3 border-l-indigo-500"
+            >
+              <CardContent class="p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono font-bold text-sm">#{{ o.room_number }}</span>
+                  <span class="text-[10px] text-muted-foreground">{{ timeSince(o.delivering_at || o.received_at) }}</span>
+                </div>
+                <ul class="space-y-0.5">
+                  <li v-for="item in o.items" :key="item.name" class="text-xs">
+                    <span class="text-muted-foreground">{{ item.qty }}×</span> {{ item.name }}
+                  </li>
+                </ul>
+                <Button v-if="canWork" size="xs" variant="success" class="w-full" @click="advance(o)">
+                  <CheckCircle class="w-3 h-3 mr-1" />
+                  Yetkazildi
+                </Button>
+              </CardContent>
+            </Card>
+            <p v-if="!store.orders.filter(o => o.status === 'delivering').length" class="text-xs text-muted-foreground text-center py-4">—</p>
+          </div>
+
+          <!-- Yetkazildi (delivered - today only) -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-green-200 dark:border-green-900">
+              <CheckCircle class="w-4 h-4 text-green-600" />
+              <span class="text-sm font-semibold">Yetkazildi</span>
+              <Badge variant="success" class="text-[10px] ml-auto">{{ store.delivered.length }}</Badge>
+            </div>
+            <Card
+              v-for="o in store.delivered.slice(0, 5)"
+              :key="o.id"
+              class="border-l-3 border-l-green-500 opacity-75"
+            >
+              <CardContent class="p-3 space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono font-bold text-sm">#{{ o.room_number }}</span>
+                  <span class="text-[10px] text-muted-foreground">{{ o.delivered_at ? timeSince(o.delivered_at) : '' }}</span>
+                </div>
+                <p class="text-xs text-muted-foreground">{{ o.items.map(i => `${i.qty}× ${i.name}`).join(', ') }}</p>
+                <p class="text-xs font-semibold">{{ money(o.total_minor_units) }}</p>
+              </CardContent>
+            </Card>
+            <p v-if="!store.delivered.length" class="text-xs text-muted-foreground text-center py-4">—</p>
+          </div>
         </div>
       </TabsContent>
 
