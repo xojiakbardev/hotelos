@@ -48,6 +48,8 @@ class GuestMaintenanceOut(BaseModel):
     reported_at: datetime
     assigned_at: datetime | None = None
     resolved_at: datetime | None = None
+    technician_name: str | None = None
+    technician_phone: str | None = None
 
 
 class GuestCleaningOut(BaseModel):
@@ -64,6 +66,8 @@ class GuestDashboardOut(BaseModel):
     guest_name: str
     room_number: int
     floor: int
+    cleaning_preference: str = "afternoon"
+    cleaning_preference_note: str | None = None
     orders: list[GuestOrderOut]
     maintenance_requests: list[GuestMaintenanceOut]
     cleaning_requests: list[GuestCleaningOut]

@@ -16,7 +16,16 @@ from src.api.routers import issues as issues_router
 from src.core.broker import create_redis
 from src.core.config import settings
 from src.core.db import engine
+from src.events.handlers import (
+    on_guest_portal_maintenance_requested,
+    on_user_created,
+    on_user_deactivated,
+    on_user_updated,
+    set_publisher,
+)
 from src.events.publisher import EventPublisher
+from src.events.subscriber import EventSubscriber
+from src.events.topics import Channels
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("maintenance-service")
@@ -26,10 +35,21 @@ logger = logging.getLogger("maintenance-service")
 async def lifespan(app: FastAPI):
     app.state.redis = create_redis()
     app.state.publisher = EventPublisher(app.state.redis, publisher_name=settings.service_name)
+    set_publisher(app.state.publisher)
+
+    subscriber = EventSubscriber(app.state.redis)
+    subscriber.on(Channels.USER_CREATED, on_user_created)
+    subscriber.on(Channels.USER_UPDATED, on_user_updated)
+    subscriber.on(Channels.USER_DEACTIVATED, on_user_deactivated)
+    subscriber.on(Channels.GUEST_PORTAL_MAINTENANCE_REQUESTED, on_guest_portal_maintenance_requested)
+    await subscriber.start()
+    app.state.subscriber = subscriber
+
     logger.info("maintenance-service ready (redis=%s)", settings.redis_url)
     try:
         yield
     finally:
+        await app.state.subscriber.stop()
         await app.state.redis.aclose()
         await engine.dispose()
 

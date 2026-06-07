@@ -20,6 +20,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from pydantic import BaseModel, Field
 
 from src.api.dependencies import (
     CurrentUserDep,
@@ -29,7 +30,7 @@ from src.api.dependencies import (
 )
 from src.api.schemas.queue import CleaningEntryOut
 from src.domain.enums import CleaningStatus, UserRole
-from src.domain.models import SystemSettings
+from src.domain.models import CleaningQueueEntry, SystemSettings
 from src.events.topics import Channels
 from src.infra.repositories.cleaning_queue_repository import CleaningQueueRepository
 from src.services.photo_storage import save_photo, validate_image
@@ -47,6 +48,59 @@ async def list_open_entries(
 ) -> list[CleaningEntryOut]:
     entries = await CleaningQueueRepository(session).list_open()
     return [CleaningEntryOut.model_validate(e, from_attributes=True) for e in entries]
+
+
+class ManualEnqueuePayload(BaseModel):
+    room_id: uuid.UUID
+    room_number: int = Field(..., ge=1, le=9999)
+    floor: int = Field(..., ge=1, le=99)
+    cleaning_preference: str = Field("afternoon", max_length=16)
+    cleaning_preference_note: str | None = Field(None, max_length=200)
+
+
+@router.post("", response_model=CleaningEntryOut, status_code=status.HTTP_201_CREATED)
+async def enqueue_manual(
+    payload: ManualEnqueuePayload,
+    session: SessionDep,
+    publisher: PublisherDep,
+    user: CurrentUserDep,
+    _=Depends(require_role(UserRole.MANAGER)),
+) -> CleaningEntryOut:
+    """Manager manually adds a room to the cleaning queue.
+
+    The unique constraint (`room_id`, `status`) prevents creating a duplicate
+    active entry — if the room already has a pending/in_progress entry we
+    return that one instead of erroring.
+    """
+    repo = CleaningQueueRepository(session)
+    async with session.begin():
+        existing = await repo.find_active_for_room(payload.room_id)
+        if existing is not None:
+            snapshot = CleaningEntryOut.model_validate(existing, from_attributes=True)
+        else:
+            entry = CleaningQueueEntry(
+                room_id=payload.room_id,
+                room_number=payload.room_number,
+                floor=payload.floor,
+                status=CleaningStatus.PENDING.value,
+                cleaning_preference=payload.cleaning_preference,
+                cleaning_preference_note=payload.cleaning_preference_note,
+            )
+            session.add(entry)
+            await session.flush()
+            snapshot = CleaningEntryOut.model_validate(entry, from_attributes=True)
+
+    await publisher.publish(
+        channel=Channels.ROOM_CLEANING_REQUESTED,
+        payload={
+            "entry_id": str(snapshot.id),
+            "room_id": str(snapshot.room_id),
+            "room_number": snapshot.room_number,
+            "floor": snapshot.floor,
+            "requested_by_user_id": user.id,
+        },
+    )
+    return snapshot
 
 
 @router.get("/history", response_model=list[CleaningEntryOut])

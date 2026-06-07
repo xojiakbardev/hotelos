@@ -4,12 +4,23 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from src.api.dependencies import SessionDep, require_role
+from src.api.dependencies import PublisherDep, SessionDep, require_role
 from src.api.schemas.user import UserCreate, UserOut, UserUpdate
 from src.core.security.hash import hash_password
 from src.domain.enums import UserRole
+from src.events.topics import Channels
 from src.infra.repositories.permission_repository import PermissionRepository
 from src.infra.repositories.user_repository import UserRepository
+
+
+def _user_event_payload(user) -> dict:
+    return {
+        "user_id": str(user.id),
+        "phone": user.phone,
+        "full_name": user.full_name,
+        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        "is_active": user.is_active,
+    }
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -33,6 +44,7 @@ async def list_users(
 async def create_user(
     payload: UserCreate,
     session: SessionDep,
+    publisher: PublisherDep,
     _=Depends(require_role(UserRole.MANAGER)),
 ) -> UserOut:
     repo = UserRepository(session)
@@ -48,6 +60,7 @@ async def create_user(
     )
     await PermissionRepository(session).create_default_entries_for_user(user.id, payload.role)
     await session.commit()
+    await publisher.publish(channel=Channels.USER_CREATED, payload=_user_event_payload(user))
     return UserOut(
         id=str(user.id),
         phone=user.phone,
@@ -65,6 +78,7 @@ async def update_user(
     user_id: uuid.UUID,
     payload: UserUpdate,
     session: SessionDep,
+    publisher: PublisherDep,
     _=Depends(require_role(UserRole.MANAGER)),
 ) -> UserOut:
     """Update a staff user's name, role, password, or active status."""
@@ -83,6 +97,7 @@ async def update_user(
         if payload.is_active is not None:
             user.is_active = payload.is_active
 
+    await publisher.publish(channel=Channels.USER_UPDATED, payload=_user_event_payload(user))
     return UserOut(
         id=str(user.id),
         phone=user.phone,
@@ -96,6 +111,7 @@ async def update_user(
 async def delete_user(
     user_id: uuid.UUID,
     session: SessionDep,
+    publisher: PublisherDep,
     _=Depends(require_role(UserRole.MANAGER)),
 ):
     """Soft-delete (deactivate) a staff user."""
@@ -112,4 +128,5 @@ async def delete_user(
             )
     async with session.begin():
         user.is_active = False
+    await publisher.publish(channel=Channels.USER_DEACTIVATED, payload=_user_event_payload(user))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

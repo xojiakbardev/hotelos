@@ -190,6 +190,8 @@ export const receptionApi = {
       .then((r) => r.data),
   listOrders: () => api.get<Order[]>('/reception/orders').then((r) => r.data),
   listOrdersHistory: () => api.get<Order[]>('/reception/orders/history').then((r) => r.data),
+  listOrdersByGuest: (guestId: string) =>
+    api.get<Order[]>(`/reception/orders/by-guest/${guestId}`).then((r) => r.data),
   createOrder: (payload: OrderCreate) =>
     api.post<Order>('/reception/orders', payload).then((r) => r.data),
   advanceOrder: (orderId: string) =>

@@ -71,9 +71,18 @@ class IssueRepository:
         await self.session.flush()
         return issue
 
-    async def mark_assigned(self, issue: Issue, *, technician_id: uuid.UUID) -> None:
+    async def mark_assigned(
+        self,
+        issue: Issue,
+        *,
+        technician_id: uuid.UUID,
+        technician_name: str | None = None,
+        technician_phone: str | None = None,
+    ) -> None:
         issue.status = IssueStatus.ASSIGNED.value
         issue.assigned_technician_id = technician_id
+        issue.assigned_technician_name = technician_name
+        issue.assigned_technician_phone = technician_phone
         issue.assigned_at = datetime.now(timezone.utc)
         await self.session.flush()
 

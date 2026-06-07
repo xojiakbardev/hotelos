@@ -57,12 +57,12 @@ async function loadData() {
   if (!props.guest) return
   loadingHistory.value = true
   try {
-    const [h, allOrders] = await Promise.all([
+    const [h, guestOrders] = await Promise.all([
       receptionApi.guestHistory(props.guest.phone).catch(() => null),
-      receptionApi.listOrders().catch(() => [] as Order[])
+      receptionApi.listOrdersByGuest(props.guest.id).catch(() => [] as Order[])
     ])
     history.value = h
-    orders.value = allOrders.filter(o => o.guest_id === props.guest!.id)
+    orders.value = guestOrders
   } finally { loadingHistory.value = false }
 }
 
@@ -116,7 +116,12 @@ const roomTotal = computed(() => {
 })
 
 const serviceTotal = computed(() => {
-  return orders.value.reduce((s, o) => s + (o.status === 'delivered' ? o.total_minor_units : 0), 0)
+  // Bill includes all open orders (received/preparing/delivering) plus delivered.
+  // Only cancelled orders are excluded — once a kitchen starts cooking the guest pays.
+  return orders.value.reduce(
+    (s, o) => s + (o.status === 'cancelled' ? 0 : o.total_minor_units),
+    0,
+  )
 })
 
 const grandTotal = computed(() => roomTotal.value + serviceTotal.value)
@@ -231,7 +236,7 @@ const grandTotal = computed(() => roomTotal.value + serviceTotal.value)
               <span class="font-mono tabular-nums">{{ money(roomTotal) }}</span>
             </div>
             <div class="flex justify-between text-sm">
-              <span class="flex items-center gap-1"><UtensilsCrossed class="w-3.5 h-3.5" /> Xona xizmati ({{ orders.filter(o => o.status === 'delivered').length }})</span>
+              <span class="flex items-center gap-1"><UtensilsCrossed class="w-3.5 h-3.5" /> Xona xizmati ({{ orders.filter(o => o.status !== 'cancelled').length }})</span>
               <span class="font-mono tabular-nums">{{ money(serviceTotal) }}</span>
             </div>
             <Separator />

@@ -34,4 +34,10 @@ class Channels:
     ROOM_CLEANING_STARTED = "rooms.cleaning_started"
     ROOM_CLEANED = "rooms.cleaned"
     MAINTENANCE_REPORTED = "maintenance.reported"
+    MAINTENANCE_ASSIGNED = "maintenance.assigned"
     MAINTENANCE_RESOLVED = "maintenance.resolved"
+
+    # Reception publishes this when a guest reports an issue from the
+    # portal. maintenance-service subscribes, creates a real Issue row,
+    # and emits the canonical MAINTENANCE_REPORTED event itself.
+    GUEST_PORTAL_MAINTENANCE_REQUESTED = "guest_portal.maintenance_requested"

@@ -22,7 +22,7 @@ from src.api.schemas.guest_portal import (
     GuestOrderCreate,
     GuestOrderOut,
 )
-from src.domain.models import CleaningRequest, Order
+from src.domain.models import CleaningRequest, MaintenanceProjection, Order
 from src.events.topics import Channels
 from src.infra.repositories.guest_repository import GuestRepository
 from src.infra.repositories.order_repository import OrderRepository
@@ -54,12 +54,30 @@ async def guest_dashboard(
         for o in orders
     ]
 
-    # Maintenance requests — fetch from local projection or just show guest's
-    # For now we query reception's knowledge of maintenance via events stored locally
-    # Actually maintenance is a separate service. Guest sees status via WS events.
-    # We'll return empty for now and rely on WS for real-time.
-    # TODO: If we want history, reception could keep a local projection.
-    maintenance_out: list[GuestMaintenanceOut] = []
+    # Maintenance requests — read from the local projection fed by
+    # `maintenance.*` events. Reception cannot read maintenance-service's
+    # schema directly, so this projection (handlers.py) is the only path
+    # through which the guest portal sees issue status + assigned tech.
+    mp_stmt = (
+        select(MaintenanceProjection)
+        .where(MaintenanceProjection.guest_id == guest_uuid)
+        .order_by(MaintenanceProjection.reported_at.desc())
+    )
+    mp_rows = (await session.execute(mp_stmt)).scalars().all()
+    maintenance_out = [
+        GuestMaintenanceOut(
+            id=row.id,
+            description=row.description,
+            status=row.status,
+            urgency=row.urgency,
+            reported_at=row.reported_at,
+            assigned_at=row.assigned_at,
+            resolved_at=row.resolved_at,
+            technician_name=row.technician_name,
+            technician_phone=row.technician_phone,
+        )
+        for row in mp_rows
+    ]
 
     # Cleaning requests
     room_uuid = uuid.UUID(guest.room_id)
@@ -86,6 +104,8 @@ async def guest_dashboard(
         guest_name=guest_name,
         room_number=guest.room_number,
         floor=0,  # will be filled from room data
+        cleaning_preference=(guest_record.cleaning_preference if guest_record else "afternoon") or "afternoon",
+        cleaning_preference_note=guest_record.cleaning_preference_note if guest_record else None,
         orders=orders_out,
         maintenance_requests=maintenance_out,
         cleaning_requests=cleaning_out,
@@ -159,9 +179,13 @@ async def create_guest_maintenance(
     if guest_record is None or guest_record.checked_out_at is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not checked in")
 
+    # We don't fabricate the canonical maintenance.reported event from
+    # here — maintenance-service owns Issue ids. Instead we publish a
+    # request and let maintenance create the real row + canonical event.
     await publisher.publish(
-        channel=Channels.MAINTENANCE_REPORTED,
+        channel=Channels.GUEST_PORTAL_MAINTENANCE_REQUESTED,
         payload={
+            "guest_id": guest.guest_id,
             "room_id": guest.room_id,
             "room_number": guest.room_number,
             "floor": guest_record.room.floor,

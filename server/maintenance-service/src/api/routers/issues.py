@@ -25,6 +25,7 @@ from src.api.schemas.issue import IssueOut, IssueReport
 from src.domain.enums import IssueStatus, UserRole
 from src.events.topics import Channels
 from src.infra.repositories.issue_repository import IssueRepository
+from src.infra.repositories.technician_repository import TechnicianRepository
 from src.services.priority_queue import rank_by_priority
 
 router = APIRouter(tags=["maintenance"])
@@ -114,7 +115,13 @@ async def assign_to_me(
                     "current_status": issue.status,
                 },
             )
-        await repo.mark_assigned(issue, technician_id=uuid.UUID(user.id))
+        tech = await TechnicianRepository(session).get(uuid.UUID(user.id))
+        await repo.mark_assigned(
+            issue,
+            technician_id=uuid.UUID(user.id),
+            technician_name=tech.full_name if tech else None,
+            technician_phone=tech.phone if tech else None,
+        )
         snapshot = IssueOut.model_validate(issue, from_attributes=True)
 
     await publisher.publish(
@@ -124,6 +131,8 @@ async def assign_to_me(
             "room_id": str(snapshot.room_id),
             "room_number": snapshot.room_number,
             "technician_user_id": user.id,
+            "technician_name": snapshot.assigned_technician_name,
+            "technician_phone": snapshot.assigned_technician_phone,
             "assigned_at": snapshot.assigned_at.isoformat() if snapshot.assigned_at else None,
         },
     )
@@ -157,7 +166,13 @@ async def assign_to_technician(
                     "message": f"cannot assign issue in status '{issue.status}'",
                 },
             )
-        await repo.mark_assigned(issue, technician_id=uuid.UUID(payload.technician_id))
+        tech = await TechnicianRepository(session).get(uuid.UUID(payload.technician_id))
+        await repo.mark_assigned(
+            issue,
+            technician_id=uuid.UUID(payload.technician_id),
+            technician_name=tech.full_name if tech else None,
+            technician_phone=tech.phone if tech else None,
+        )
         snapshot = IssueOut.model_validate(issue, from_attributes=True)
 
     await publisher.publish(
@@ -167,6 +182,8 @@ async def assign_to_technician(
             "room_id": str(snapshot.room_id),
             "room_number": snapshot.room_number,
             "technician_user_id": payload.technician_id,
+            "technician_name": snapshot.assigned_technician_name,
+            "technician_phone": snapshot.assigned_technician_phone,
             "assigned_at": snapshot.assigned_at.isoformat() if snapshot.assigned_at else None,
         },
     )

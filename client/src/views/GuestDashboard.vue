@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useGuestPortalStore } from '@/stores/guest-portal'
 import { useAuthStore } from '@/stores/auth'
 import { useWsStore } from '@/stores/ws'
+import { useToastStore } from '@/stores/toast'
 import { guestPortalApi, type MenuItem, type GuestOrderItem } from '@/api/guest-portal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -29,11 +31,27 @@ import {
   ArrowLeft,
   Loader2,
   KeyRound,
+  Phone,
 } from 'lucide-vue-next'
 
 const store = useGuestPortalStore()
 const auth = useAuthStore()
 const ws = useWsStore()
+const toast = useToastStore()
+const route = useRoute()
+const router = useRouter()
+
+// Active tab — synced with URL query param
+const VALID_TABS = ['orders', 'maintenance', 'cleaning', 'profile'] as const
+type TabValue = typeof VALID_TABS[number]
+
+const activeTab = ref<TabValue>(
+  VALID_TABS.includes(route.query.tab as TabValue) ? (route.query.tab as TabValue) : 'orders'
+)
+
+watch(activeTab, (tab) => {
+  router.replace({ query: { ...route.query, tab } })
+})
 
 // Password modal
 const showPwModal = ref(false)
@@ -100,14 +118,46 @@ const totalOrdersCost = computed(() => store.orders.reduce((s, o) => s + o.total
 
 const CATEGORY_UZ: Record<string, string> = { drinks: 'Ichimliklar', food: 'Ovqatlar', dessert: 'Shirinliklar', snacks: 'Gazaklar', other: 'Boshqa' }
 
-// Cleaning preference
+// Cleaning preference — initialised from the dashboard payload so the
+// selected option survives reloads and WS-triggered re-fetches.
 const cleaningPref = ref('afternoon')
+const cleaningPrefNote = ref('')
+const savedPrefNote = ref('')
+const savingPrefNote = ref(false)
+
+watch(
+  () => [store.cleaningPreference, store.cleaningPreferenceNote] as const,
+  ([pref, note]) => {
+    if (pref) cleaningPref.value = pref
+    cleaningPrefNote.value = note || ''
+    savedPrefNote.value = note || ''
+  },
+  { immediate: true }
+)
 
 async function updatePref(val: string) {
   cleaningPref.value = val
+  if (val !== 'custom') {
+    cleaningPrefNote.value = ''
+    savedPrefNote.value = ''
+  }
   try {
-    await guestPortalApi.updateCleaningPreference(val)
+    await guestPortalApi.updateCleaningPreference(val, val === 'custom' ? cleaningPrefNote.value.trim() || null : null)
   } catch { /* ignore */ }
+}
+
+const prefNoteChanged = computed(() => cleaningPrefNote.value.trim() !== savedPrefNote.value.trim())
+
+async function savePrefNote() {
+  if (!prefNoteChanged.value) return
+  savingPrefNote.value = true
+  try {
+    const trimmed = cleaningPrefNote.value.trim()
+    await guestPortalApi.updateCleaningPreference('custom', trimmed || null)
+    savedPrefNote.value = trimmed
+    toast.success("Tozalash vaqti saqlandi")
+  } catch { toast.error('Saqlashda xatolik') }
+  finally { savingPrefNote.value = false }
 }
 
 function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
@@ -181,7 +231,7 @@ async function submitCleaning() {
     <template v-else>
       <div v-if="store.error" class="rounded-md bg-destructive/10 text-destructive text-sm p-3">{{ store.error }}</div>
 
-      <Tabs default-value="orders">
+      <Tabs v-model="activeTab">
         <TabsList class="w-full">
           <TabsTrigger value="orders" class="flex-1 gap-1.5">
             <UtensilsCrossed class="w-4 h-4" />
@@ -355,6 +405,21 @@ async function submitCleaning() {
             <CardContent class="p-4 space-y-2">
               <Badge :variant="statusVariant(req.status)">{{ statusLabel(req.status) }}</Badge>
               <p class="text-sm">{{ req.description }}</p>
+              <div
+                v-if="req.status === 'assigned' && req.technician_name"
+                class="mt-2 rounded-md bg-primary/5 border border-primary/20 p-2.5 space-y-1"
+              >
+                <p class="text-[11px] font-semibold uppercase text-primary">Texnik tayinlandi</p>
+                <p class="text-sm font-medium">{{ req.technician_name }}</p>
+                <a
+                  v-if="req.technician_phone"
+                  :href="`tel:${req.technician_phone}`"
+                  class="text-xs text-primary inline-flex items-center gap-1 hover:underline"
+                >
+                  <Phone class="w-3 h-3" />
+                  {{ req.technician_phone }}
+                </a>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -444,7 +509,26 @@ async function submitCleaning() {
                     <SelectItem value="custom">Maxsus vaqt</SelectItem>
                   </SelectContent>
                 </Select>
-                <p class="text-xs text-muted-foreground">Xonangiz qachon tozalanishini tanlang</p>
+                <div v-if="cleaningPref === 'custom'" class="flex gap-2">
+                  <Input
+                    v-model="cleaningPrefNote"
+                    placeholder="Masalan: 14:30 dan keyin"
+                    maxlength="80"
+                    @keydown.enter.prevent="savePrefNote"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    :disabled="!prefNoteChanged || savingPrefNote"
+                    @click="savePrefNote"
+                  >
+                    <Loader2 v-if="savingPrefNote" class="w-3.5 h-3.5 animate-spin" />
+                    <span v-else>Saqlash</span>
+                  </Button>
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  {{ cleaningPref === 'custom' ? "O'zingizga qulay vaqtni yozing va saqlang" : 'Xonangiz qachon tozalanishini tanlang' }}
+                </p>
               </div>
 
               <Separator />

@@ -343,3 +343,44 @@ class CleaningRequest(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class MaintenanceProjection(Base):
+    """Local read-model of maintenance issues owned by maintenance-service.
+
+    Built from `maintenance.*` events. Lets the guest portal show the
+    status of issues a guest reported (including the assigned technician's
+    name + phone, denormalised on the event) without reception-service
+    ever having to call into maintenance-service over HTTP.
+
+    `id` mirrors maintenance.issues.id. We carry `guest_id` (nullable —
+    issues reported by staff for an unoccupied room won't have one) so
+    the dashboard query is a simple `where guest_id = :id`.
+    """
+
+    __tablename__ = "maintenance_projection"
+    __table_args__ = {"schema": SCHEMA}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    guest_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    room_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    room_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    floor: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    urgency: Mapped[str] = mapped_column(String(16), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="reported")
+    technician_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    technician_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

@@ -18,6 +18,7 @@ from src.events.handlers import (
     on_guest_credential_deactivated,
     on_guest_credential_updated,
 )
+from src.events.publisher import EventPublisher
 from src.events.subscriber import EventSubscriber
 from src.events.topics import Channels
 
@@ -28,6 +29,31 @@ logger = logging.getLogger("auth-service")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.redis = create_redis()
+    app.state.publisher = EventPublisher(app.state.redis, publisher_name=settings.service_name)
+
+    # Replay current technician roster so subscribers can rebuild a stale
+    # projection cache after a restart without us hand-rolling a migration.
+    try:
+        from src.core.db import async_session_factory
+        from src.domain.enums import UserRole
+        from src.infra.repositories.user_repository import UserRepository
+
+        async with async_session_factory() as session:
+            users = await UserRepository(session).list_active()
+            for u in users:
+                if u.role in (UserRole.TECHNICIAN, UserRole.MANAGER, UserRole.RECEPTION, UserRole.CLEANER, UserRole.KITCHEN):
+                    await app.state.publisher.publish(
+                        channel=Channels.USER_CREATED,
+                        payload={
+                            "user_id": str(u.id),
+                            "phone": u.phone,
+                            "full_name": u.full_name,
+                            "role": u.role.value if hasattr(u.role, "value") else str(u.role),
+                            "is_active": u.is_active,
+                        },
+                    )
+    except Exception:
+        logger.exception("startup user replay failed (non-fatal)")
 
     subscriber = EventSubscriber(app.state.redis)
     subscriber.on(Channels.GUEST_CREDENTIAL_CREATED, on_guest_credential_created)

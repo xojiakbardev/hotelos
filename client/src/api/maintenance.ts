@@ -14,6 +14,8 @@ export interface Issue {
   reported_by_user_id: string
   reported_at: string
   assigned_technician_id: string | null
+  assigned_technician_name: string | null
+  assigned_technician_phone: string | null
   assigned_at: string | null
   resolved_at: string | null
   resolved_by_user_id: string | null

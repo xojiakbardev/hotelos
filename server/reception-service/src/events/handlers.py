@@ -13,8 +13,11 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import select
+
 from src.core.db import async_session_factory
 from src.domain.enums import Cleanliness, RoomStatus
+from src.domain.models import Guest, MaintenanceProjection
 from src.infra.repositories.room_repository import RoomRepository
 
 logger = logging.getLogger("reception-service.handlers")
@@ -89,22 +92,72 @@ async def on_room_cleaned(envelope: dict) -> None:
 async def on_maintenance_reported(envelope: dict) -> None:
     """A technical issue was reported against a room.
 
-    Flip the room's cleanliness to `maintenance` so the assignment
-    algorithm excludes it from new check-ins until the issue is resolved.
-    We don't touch `status` — if a guest was already in the room, the
-    guest stays.
+    Two side effects:
+      * Flip the room's cleanliness to `maintenance` so the assignment
+        algorithm excludes it from new check-ins until the issue is
+        resolved. We don't touch `status` — if a guest was already in
+        the room, the guest stays.
+      * Insert the issue into the guest portal projection. We link it to
+        whichever guest is currently checked into the room so the guest
+        dashboard can show "your reported issue".
     """
     payload = envelope.get("payload") or {}
     raw_id = payload.get("room_id")
+    issue_id = payload.get("issue_id")
     if not raw_id:
         return
+    room_uuid = uuid.UUID(raw_id)
     async with async_session_factory() as session:
         async with session.begin():
             rooms = RoomRepository(session)
-            room = await rooms.get(uuid.UUID(raw_id))
-            if room is None or room.cleanliness_status == Cleanliness.MAINTENANCE.value:
+            room = await rooms.get(room_uuid)
+            if room is not None and room.cleanliness_status != Cleanliness.MAINTENANCE.value:
+                room.cleanliness_status = Cleanliness.MAINTENANCE.value
+
+            if not issue_id:
                 return
-            room.cleanliness_status = Cleanliness.MAINTENANCE.value
+            # Find the current guest in the room (the issue's "owner" from
+            # the portal's perspective). Might be None if reception
+            # reported it for an empty room.
+            stmt = select(Guest).where(
+                Guest.room_id == room_uuid, Guest.checked_out_at.is_(None)
+            )
+            guest = (await session.execute(stmt)).scalars().first()
+            existing = await session.get(MaintenanceProjection, uuid.UUID(issue_id))
+            if existing is not None:
+                return  # idempotent — duplicate delivery
+            session.add(
+                MaintenanceProjection(
+                    id=uuid.UUID(issue_id),
+                    guest_id=guest.id if guest else None,
+                    room_id=room_uuid,
+                    room_number=int(payload.get("room_number") or 0),
+                    floor=int(payload.get("floor") or 0),
+                    urgency=str(payload.get("urgency") or "normal"),
+                    description=str(payload.get("description") or "")[:500],
+                    status="reported",
+                    reported_at=_parse_dt(payload.get("reported_at")),
+                )
+            )
+
+
+async def on_maintenance_assigned(envelope: dict) -> None:
+    """Maintenance assigned a technician. Update the projection so the
+    guest portal can show who is coming + their phone number.
+    """
+    payload = envelope.get("payload") or {}
+    issue_id = payload.get("issue_id")
+    if not issue_id:
+        return
+    async with async_session_factory() as session:
+        async with session.begin():
+            row = await session.get(MaintenanceProjection, uuid.UUID(issue_id))
+            if row is None:
+                return
+            row.status = "assigned"
+            row.technician_name = payload.get("technician_name")
+            row.technician_phone = payload.get("technician_phone")
+            row.assigned_at = _parse_dt(payload.get("assigned_at"))
 
 
 async def on_maintenance_resolved(envelope: dict) -> None:
@@ -112,16 +165,23 @@ async def on_maintenance_resolved(envelope: dict) -> None:
     but it still needs a cleaning pass before reuse — we set cleanliness
     to `dirty`. Housekeeping subscribes to the same event in parallel and
     enqueues the room so the cleaner sees it on their queue page.
+
+    Also closes out the guest portal projection.
     """
     payload = envelope.get("payload") or {}
     raw_id = payload.get("room_id")
+    issue_id = payload.get("issue_id")
     if not raw_id:
         return
     async with async_session_factory() as session:
         async with session.begin():
             rooms = RoomRepository(session)
             room = await rooms.get(uuid.UUID(raw_id))
-            if room is None:
-                return
-            if room.cleanliness_status == Cleanliness.MAINTENANCE.value:
+            if room is not None and room.cleanliness_status == Cleanliness.MAINTENANCE.value:
                 room.cleanliness_status = Cleanliness.DIRTY.value
+
+            if issue_id:
+                row = await session.get(MaintenanceProjection, uuid.UUID(issue_id))
+                if row is not None:
+                    row.status = "resolved"
+                    row.resolved_at = _parse_dt(payload.get("resolved_at"))

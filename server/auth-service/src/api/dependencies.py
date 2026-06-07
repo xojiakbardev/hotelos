@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,11 +13,19 @@ from src.core.db import get_session
 from src.core.security.jwt import decode_access_token
 from src.domain.enums import UserRole
 from src.domain.models import User
+from src.events.publisher import EventPublisher
 from src.infra.repositories.user_repository import UserRepository
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+async def get_publisher(request: Request) -> EventPublisher:
+    return request.app.state.publisher
+
+
+PublisherDep = Annotated[EventPublisher, Depends(get_publisher)]
 
 
 async def get_current_user(

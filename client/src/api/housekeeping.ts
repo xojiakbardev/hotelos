@@ -23,6 +23,13 @@ export interface CleaningEntry {
 export const housekeepingApi = {
   listQueue: () => api.get<CleaningEntry[]>('/housekeeping/queue').then((r) => r.data),
   listHistory: () => api.get<CleaningEntry[]>('/housekeeping/queue/history').then((r) => r.data),
+  enqueue: (payload: {
+    room_id: string
+    room_number: number
+    floor: number
+    cleaning_preference?: CleaningPreference
+    cleaning_preference_note?: string | null
+  }) => api.post<CleaningEntry>('/housekeeping/queue', payload).then((r) => r.data),
   start: (entryId: string) =>
     api.post<CleaningEntry>(`/housekeeping/queue/${entryId}/start`).then((r) => r.data),
   complete: (entryId: string, photo?: File | null) => {

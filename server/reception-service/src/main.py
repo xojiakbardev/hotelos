@@ -26,6 +26,7 @@ from src.core.broker import create_redis
 from src.core.config import settings
 from src.core.db import engine
 from src.events.handlers import (
+    on_maintenance_assigned,
     on_maintenance_reported,
     on_maintenance_resolved,
     on_room_cleaned,
@@ -85,6 +86,7 @@ async def lifespan(app: FastAPI):
     subscriber.on(Channels.ROOM_CLEANING_STARTED, on_room_cleaning_started)
     subscriber.on(Channels.ROOM_CLEANED, on_room_cleaned)
     subscriber.on(Channels.MAINTENANCE_REPORTED, on_maintenance_reported)
+    subscriber.on(Channels.MAINTENANCE_ASSIGNED, on_maintenance_assigned)
     subscriber.on(Channels.MAINTENANCE_RESOLVED, on_maintenance_resolved)
     await subscriber.start()
     app.state.subscriber = subscriber

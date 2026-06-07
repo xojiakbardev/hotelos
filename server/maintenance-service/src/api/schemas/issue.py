@@ -33,6 +33,8 @@ class IssueOut(BaseModel):
     reported_by_user_id: uuid.UUID
     reported_at: datetime
     assigned_technician_id: uuid.UUID | None = None
+    assigned_technician_name: str | None = None
+    assigned_technician_phone: str | None = None
     assigned_at: datetime | None = None
     resolved_at: datetime | None = None
     resolved_by_user_id: uuid.UUID | None = None

@@ -35,6 +35,8 @@ export interface GuestMaintenance {
   reported_at: string
   assigned_at: string | null
   resolved_at: string | null
+  technician_name: string | null
+  technician_phone: string | null
 }
 
 export interface GuestCleaning {
@@ -51,6 +53,8 @@ export interface GuestDashboard {
   guest_name: string
   room_number: number
   floor: number
+  cleaning_preference: string
+  cleaning_preference_note: string | null
   orders: GuestOrder[]
   maintenance_requests: GuestMaintenance[]
   cleaning_requests: GuestCleaning[]

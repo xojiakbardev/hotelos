@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,9 +14,10 @@ import {
   type Room,
   type RoomType
 } from '@/api/reception'
+import { reservationsApi, type Reservation } from '@/api/reservations'
 import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/composables/useOptimistic'
-import { Loader2, Copy, Check as CheckIcon } from 'lucide-vue-next'
+import { Loader2, Copy, Check as CheckIcon, CalendarCheck } from 'lucide-vue-next'
 
 const props = defineProps<{ room?: Room | null }>()
 const emit = defineEmits<{ success: [guest: Guest]; cancel: [] }>()
@@ -49,6 +50,35 @@ const error = ref<string | null>(null)
 const successResult = ref<CheckInResponse | null>(null)
 const copied = ref(false)
 
+// Reservation lookup — confirmed bookings, picked at the top of the form.
+// If picked, we delegate to reservationsApi.checkIn so room/dates are
+// honoured (no walk-in matching, no room swap, no re-quoting).
+const reservations = ref<Reservation[]>([])
+const selectedReservationId = ref<string>('')
+
+onMounted(async () => {
+  try { reservations.value = await reservationsApi.list('confirmed') }
+  catch { /* ignore */ }
+})
+
+watch(selectedReservationId, (id) => {
+  if (!id || id === '__none') { selectedReservationId.value = ''; return }
+  const r = reservations.value.find((x) => x.id === id)
+  if (!r) return
+  form.value.full_name = r.full_name
+  form.value.phone = r.phone
+  form.value.passport_number = r.passport_number || ''
+  // Nights derived from reservation date range so the dialog can still show it.
+  const inDate = new Date(r.check_in_date)
+  const outDate = new Date(r.check_out_date)
+  const ms = Math.max(0, outDate.getTime() - inDate.getTime())
+  form.value.nights = Math.max(1, Math.round(ms / 86_400_000))
+})
+
+function clearReservation() {
+  selectedReservationId.value = ''
+}
+
 function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
 
 function copyCredentials() {
@@ -64,29 +94,39 @@ async function submit() {
   submitting.value = true
   try {
     const noteValue = form.value.cleaning_preference_note.trim() || undefined
-    const result = await receptionApi.checkIn(
-      isDirect.value
-        ? {
-            full_name: form.value.full_name.trim(),
-            phone: form.value.phone.trim(),
-            passport_number: form.value.passport_number.trim() || undefined,
-            nights: form.value.nights,
-            room_id: props.room!.id,
-            cleaning_preference: form.value.cleaning_preference,
-            cleaning_preference_note: noteValue
-          }
-        : {
-            full_name: form.value.full_name.trim(),
-            phone: form.value.phone.trim(),
-            passport_number: form.value.passport_number.trim() || undefined,
-            room_type: form.value.room_type,
-            nights: form.value.nights,
-            floor_preference: form.value.floor_preference !== 'none' ? Number(form.value.floor_preference) : undefined,
-            proximity_preference: form.value.proximity_preference !== 'none' ? form.value.proximity_preference : undefined,
-            cleaning_preference: form.value.cleaning_preference,
-            cleaning_preference_note: noteValue
-          }
-    )
+    let result: CheckInResponse
+    if (selectedReservationId.value) {
+      const r = await reservationsApi.checkIn(selectedReservationId.value)
+      result = {
+        ...r,
+        phone: form.value.phone.trim(),
+        floor: 0,
+      } as unknown as CheckInResponse
+    } else {
+      result = await receptionApi.checkIn(
+        isDirect.value
+          ? {
+              full_name: form.value.full_name.trim(),
+              phone: form.value.phone.trim(),
+              passport_number: form.value.passport_number.trim() || undefined,
+              nights: form.value.nights,
+              room_id: props.room!.id,
+              cleaning_preference: form.value.cleaning_preference,
+              cleaning_preference_note: noteValue
+            }
+          : {
+              full_name: form.value.full_name.trim(),
+              phone: form.value.phone.trim(),
+              passport_number: form.value.passport_number.trim() || undefined,
+              room_type: form.value.room_type,
+              nights: form.value.nights,
+              floor_preference: form.value.floor_preference !== 'none' ? Number(form.value.floor_preference) : undefined,
+              proximity_preference: form.value.proximity_preference !== 'none' ? form.value.proximity_preference : undefined,
+              cleaning_preference: form.value.cleaning_preference,
+              cleaning_preference_note: noteValue
+            }
+      )
+    }
     toast.success(`#${result.room_number}-xona ${result.full_name} ga tayinlandi`)
     successResult.value = result
   } catch (e: unknown) {
@@ -139,6 +179,27 @@ async function submit() {
 
   <!-- Form -->
   <form v-else @submit.prevent="submit" class="space-y-5" novalidate>
+    <!-- Reservation lookup (only when not direct-room) -->
+    <div v-if="!isDirect && reservations.length" class="space-y-2">
+      <Label class="flex items-center gap-1.5">
+        <CalendarCheck class="w-3.5 h-3.5" />
+        Mavjud bron (ixtiyoriy)
+      </Label>
+      <Select v-model="selectedReservationId">
+        <SelectTrigger><SelectValue placeholder="Walk-in (bronsiz) — yoki bron tanlang" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none">Walk-in (bronsiz)</SelectItem>
+          <SelectItem v-for="r in reservations" :key="r.id" :value="r.id">
+            #{{ r.room_number }} · {{ r.full_name }} · {{ r.phone }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      <p v-if="selectedReservationId" class="text-[11px] text-muted-foreground">
+        Bron tanlandi — mehmon ma'lumotlari avtomatik to'ldirildi.
+        <button type="button" class="text-primary hover:underline" @click="clearReservation">Bekor qilish</button>
+      </p>
+    </div>
+
     <!-- Direct room banner -->
     <div v-if="isDirect && room" class="rounded-lg bg-primary/5 border border-primary/20 p-4 flex items-center gap-4">
       <div>

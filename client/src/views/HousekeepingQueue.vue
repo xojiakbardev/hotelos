@@ -6,7 +6,11 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { housekeepingApi, type CleaningEntry } from '@/api/housekeeping'
+import { receptionApi, type Room } from '@/api/reception'
 import { useHousekeepingStore } from '@/stores/housekeeping'
 import { useWsStore } from '@/stores/ws'
 import { useAuthStore } from '@/stores/auth'
@@ -14,7 +18,7 @@ import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/composables/useOptimistic'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Play, CheckCircle, Camera, AlertTriangle, Loader2, Image } from 'lucide-vue-next'
+import { Play, CheckCircle, Camera, AlertTriangle, Loader2, Image, Clock, Sparkles, Plus } from 'lucide-vue-next'
 
 const store = useHousekeepingStore()
 const ws = useWsStore()
@@ -134,98 +138,194 @@ async function viewPhoto(path: string) {
   try { viewingPhoto.value = await housekeepingApi.fetchPhoto(path) }
   catch { toast.error("Rasmni yuklab bo'lmadi") }
 }
+
+// Stats — match maintenance layout (4 cards)
+const dndPending = computed(() => store.pending.filter((e) => e.do_not_disturb).length)
+const completedToday = computed(() => {
+  const today = new Date().toDateString()
+  return history.value.filter((e) => e.completed_at && new Date(e.completed_at).toDateString() === today).length
+})
+
+// Manual enqueue (manager only)
+const newOpen = ref(false)
+const rooms = ref<Room[]>([])
+const roomsLoading = ref(false)
+const newRoomId = ref<string>('')
+const newPref = ref<'morning' | 'afternoon' | 'evening' | 'custom'>('afternoon')
+const newPrefNote = ref('')
+const creating = ref(false)
+
+async function openNewDialog() {
+  newOpen.value = true
+  newRoomId.value = ''
+  newPref.value = 'afternoon'
+  newPrefNote.value = ''
+  if (!rooms.value.length) {
+    roomsLoading.value = true
+    try {
+      const res = await receptionApi.listRooms()
+      rooms.value = res.rooms
+    } catch { /* ignore */ }
+    finally { roomsLoading.value = false }
+  }
+}
+
+const availableRooms = computed(() => {
+  const queued = new Set([...store.pending, ...store.inProgress].map((e) => e.room_id))
+  return rooms.value.filter((r) => !queued.has(r.id))
+})
+
+async function submitNew() {
+  const room = rooms.value.find((r) => r.id === newRoomId.value)
+  if (!room) return
+  creating.value = true
+  try {
+    const created = await housekeepingApi.enqueue({
+      room_id: room.id,
+      room_number: room.room_number,
+      floor: room.floor,
+      cleaning_preference: newPref.value,
+      cleaning_preference_note: newPref.value === 'custom' ? (newPrefNote.value || null) : null,
+    })
+    store.upsert(created)
+    toast.info(`#${created.room_number}-xona navbatga qo'shildi`)
+    newOpen.value = false
+  } catch (e) { toast.error(`Xato: ${parseApiError(e)}`) }
+  finally { creating.value = false }
+}
 </script>
 
 <template>
   <div class="space-y-6">
-    <Tabs default-value="pending">
+    <!-- Stats — mirrors maintenance layout -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <Card>
+        <CardContent class="p-4 text-center">
+          <p class="text-2xl font-bold text-destructive">{{ dndPending }}</p>
+          <p class="text-xs text-muted-foreground">Bezovta etmang</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent class="p-4 text-center">
+          <p class="text-2xl font-bold text-amber-600">{{ store.pending.length }}</p>
+          <p class="text-xs text-muted-foreground">Kutmoqda</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent class="p-4 text-center">
+          <p class="text-2xl font-bold text-primary">{{ store.inProgress.length }}</p>
+          <p class="text-xs text-muted-foreground">Bajarilmoqda</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent class="p-4 text-center">
+          <p class="text-2xl font-bold text-green-600">{{ completedToday }}</p>
+          <p class="text-xs text-muted-foreground">Bugun tugatildi</p>
+        </CardContent>
+      </Card>
+    </div>
+
+    <Tabs default-value="open">
       <div class="flex items-center justify-between">
         <TabsList>
-          <TabsTrigger value="pending">Kutmoqda ({{ store.pending.length }})</TabsTrigger>
-          <TabsTrigger value="in_progress">Bajarilmoqda ({{ store.inProgress.length }})</TabsTrigger>
+          <TabsTrigger value="open">Ochiq ({{ store.pending.length + store.inProgress.length }})</TabsTrigger>
           <TabsTrigger value="history">Tarix ({{ history.length }})</TabsTrigger>
         </TabsList>
-        <div v-if="isManager" class="flex items-center gap-3">
-          <span class="text-sm text-muted-foreground">Rasm majburiy</span>
-          <button
-            type="button"
-            :class="cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer', photoRequired ? 'bg-primary' : 'bg-muted')"
-            :aria-pressed="photoRequired"
-            @click="togglePhotoRequired"
-          >
-            <span :class="cn('inline-block h-4 w-4 transform rounded-full bg-white transition-transform', photoRequired ? 'translate-x-6' : 'translate-x-1')" />
-          </button>
+        <div class="flex items-center gap-3">
+          <div v-if="isManager" class="flex items-center gap-2">
+            <span class="text-sm text-muted-foreground">Rasm majburiy</span>
+            <button
+              type="button"
+              :class="cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer', photoRequired ? 'bg-primary' : 'bg-muted')"
+              :aria-pressed="photoRequired"
+              @click="togglePhotoRequired"
+            >
+              <span :class="cn('inline-block h-4 w-4 transform rounded-full bg-white transition-transform', photoRequired ? 'translate-x-6' : 'translate-x-1')" />
+            </button>
+          </div>
+          <Button v-if="isManager" size="sm" @click="openNewDialog">
+            <Plus class="w-4 h-4 mr-1" />
+            Yangi tozalash
+          </Button>
         </div>
       </div>
 
-      <!-- Pending -->
-      <TabsContent value="pending" class="space-y-4">
+      <!-- OPEN (Kanban) -->
+      <TabsContent value="open" class="space-y-4">
         <div v-if="store.error" class="rounded-md bg-destructive/10 text-destructive text-sm p-4">{{ store.error }}</div>
-        <div v-if="store.loading && !store.entries.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card v-for="i in 3" :key="i">
+        <div v-if="store.loading && !store.entries.length" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card v-for="i in 2" :key="i">
             <CardContent class="p-4 space-y-3">
-              <div class="flex items-center justify-between">
-                <Skeleton class="h-5 w-28" />
-                <Skeleton class="h-5 w-16 rounded-full" />
-              </div>
-              <Skeleton class="h-4 w-full" />
-              <Skeleton class="h-4 w-3/4" />
-              <Skeleton class="h-9 w-full rounded-md" />
+              <Skeleton class="h-5 w-28" />
+              <Skeleton class="h-20 w-full" />
             </CardContent>
           </Card>
         </div>
-        <div v-else-if="!store.pending.length" class="text-center py-8 text-muted-foreground">Kutayotgan xonalar yo'q.</div>
-        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card v-for="e in store.pending" :key="e.id" class="transition-all hover:shadow-md">
-            <CardContent class="p-4 space-y-3">
-              <div class="flex items-center justify-between">
-                <span class="font-semibold">#{{ e.room_number }}-xona</span>
-                <Badge variant="warning">Kutmoqda</Badge>
-              </div>
-              <div class="flex justify-between text-sm text-muted-foreground">
-                <span>{{ e.floor }}-qavat</span>
-                <span>{{ new Date(e.queued_at).toLocaleTimeString('uz-UZ') }}</span>
-              </div>
-              <div v-if="e.do_not_disturb" class="flex items-center gap-2 text-xs font-medium text-amber-600 bg-warning/10 rounded-md px-2 py-1.5">
-                <AlertTriangle class="w-3.5 h-3.5" />
-                Bezovta qilmang
-              </div>
-              <p class="text-xs text-muted-foreground">
-                Afzal: {{ prefLabels[e.cleaning_preference] || e.cleaning_preference }}
-                <span v-if="e.cleaning_preference_note"> — "{{ e.cleaning_preference_note }}"</span>
-              </p>
-              <Button v-if="canWork" size="sm" class="w-full" :disabled="e.do_not_disturb" @click="startEntry(e)">
-                <Play class="w-4 h-4 mr-1" />
-                Boshlash
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </TabsContent>
+        <div v-else-if="!store.pending.length && !store.inProgress.length" class="text-center py-8 text-muted-foreground">Ochiq tozalash yo'q.</div>
 
-      <!-- In Progress -->
-      <TabsContent value="in_progress" class="space-y-4">
-        <div v-if="!store.inProgress.length" class="text-center py-8 text-muted-foreground">Hozircha bajarilayotgan tozalash yo'q.</div>
-        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card v-for="e in store.inProgress" :key="e.id" class="border-primary/30 transition-all hover:shadow-md">
-            <CardContent class="p-4 space-y-3">
-              <div class="flex items-center justify-between">
-                <span class="font-semibold">#{{ e.room_number }}-xona</span>
-                <Badge>Bajarilmoqda</Badge>
-              </div>
-              <div class="flex justify-between text-sm text-muted-foreground">
-                <span>{{ e.floor }}-qavat</span>
-                <span>boshlandi {{ e.started_at ? new Date(e.started_at).toLocaleTimeString('uz-UZ') : '' }}</span>
-              </div>
-              <div class="bg-primary/5 text-primary font-mono font-semibold text-center py-2 rounded-md tabular-nums">
-                {{ elapsedSince(e.started_at) }}
-              </div>
-              <Button v-if="canWork" size="sm" variant="success" class="w-full" @click="openComplete(e)">
-                <CheckCircle class="w-4 h-4 mr-1" />
-                Toza deb belgilash
-              </Button>
-            </CardContent>
-          </Card>
+        <!-- Kanban Board -->
+        <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Kutmoqda (pending) -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-amber-200 dark:border-amber-900">
+              <Clock class="w-4 h-4 text-amber-600" />
+              <span class="text-sm font-semibold">Kutmoqda</span>
+              <Badge variant="warning" class="text-[10px] ml-auto">{{ store.pending.length }}</Badge>
+            </div>
+            <Card
+              v-for="e in store.pending"
+              :key="e.id"
+              class="border-l-3 border-l-amber-400"
+            >
+              <CardContent class="p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono font-bold text-sm">#{{ e.room_number }}-xona</span>
+                  <span class="text-[10px] text-muted-foreground">{{ e.floor }}-qavat · {{ new Date(e.queued_at).toLocaleTimeString('uz-UZ') }}</span>
+                </div>
+                <div v-if="e.do_not_disturb" class="flex items-center gap-1.5 text-[11px] font-medium text-amber-600 bg-warning/10 rounded px-1.5 py-1">
+                  <AlertTriangle class="w-3 h-3" />
+                  Bezovta qilmang
+                </div>
+                <p class="text-[11px] text-muted-foreground">
+                  Afzal: {{ prefLabels[e.cleaning_preference] || e.cleaning_preference }}<span v-if="e.cleaning_preference_note"> — "{{ e.cleaning_preference_note }}"</span>
+                </p>
+                <Button v-if="canWork" size="xs" class="w-full" :disabled="e.do_not_disturb" @click="startEntry(e)">
+                  <Play class="w-3 h-3 mr-1" />
+                  Boshlash
+                </Button>
+              </CardContent>
+            </Card>
+            <p v-if="!store.pending.length" class="text-xs text-muted-foreground text-center py-4">—</p>
+          </div>
+
+          <!-- Bajarilmoqda (in_progress) -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2 pb-2 border-b border-blue-200 dark:border-blue-900">
+              <Sparkles class="w-4 h-4 text-blue-600" />
+              <span class="text-sm font-semibold">Bajarilmoqda</span>
+              <Badge variant="default" class="text-[10px] ml-auto">{{ store.inProgress.length }}</Badge>
+            </div>
+            <Card
+              v-for="e in store.inProgress"
+              :key="e.id"
+              class="border-l-3 border-l-blue-500"
+            >
+              <CardContent class="p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono font-bold text-sm">#{{ e.room_number }}-xona</span>
+                  <span class="text-[10px] text-muted-foreground">{{ e.floor }}-qavat</span>
+                </div>
+                <div class="bg-primary/5 text-primary font-mono font-semibold text-center py-1.5 rounded text-xs tabular-nums">
+                  {{ elapsedSince(e.started_at) }}
+                </div>
+                <Button v-if="canWork" size="xs" variant="success" class="w-full" @click="openComplete(e)">
+                  <CheckCircle class="w-3 h-3 mr-1" />
+                  Toza deb belgilash
+                </Button>
+              </CardContent>
+            </Card>
+            <p v-if="!store.inProgress.length" class="text-xs text-muted-foreground text-center py-4">—</p>
+          </div>
         </div>
       </TabsContent>
 
@@ -286,6 +386,53 @@ async function viewPhoto(path: string) {
           <Button variant="success" :disabled="!canSubmitComplete || submitting" @click="submitComplete">
             <Loader2 v-if="submitting" class="w-4 h-4 mr-2 animate-spin" />
             Tozalandi
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- New cleaning entry dialog -->
+    <Dialog :open="newOpen" @update:open="newOpen = $event">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Yangi tozalash navbati</DialogTitle>
+        </DialogHeader>
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <Label>Xona</Label>
+            <Select v-model="newRoomId">
+              <SelectTrigger><SelectValue placeholder="Xonani tanlang" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem v-if="roomsLoading" disabled value="__loading">Yuklanmoqda...</SelectItem>
+                <SelectItem v-else-if="!availableRooms.length" disabled value="__empty">Bo'sh xonalar yo'q</SelectItem>
+                <SelectItem v-for="r in availableRooms" :key="r.id" :value="r.id">
+                  #{{ r.room_number }}-xona — {{ r.floor }}-qavat
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="space-y-2">
+            <Label>Tozalash vaqti</Label>
+            <Select v-model="newPref">
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="morning">Ertalab</SelectItem>
+                <SelectItem value="afternoon">Tushdan keyin</SelectItem>
+                <SelectItem value="evening">Kechqurun</SelectItem>
+                <SelectItem value="custom">Maxsus vaqt</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div v-if="newPref === 'custom'" class="space-y-2">
+            <Label>Izoh</Label>
+            <Input v-model="newPrefNote" placeholder="Masalan: 14:30 dan keyin" maxlength="200" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" :disabled="creating" @click="newOpen = false">Bekor</Button>
+          <Button :disabled="!newRoomId || newRoomId.startsWith('__') || creating" @click="submitNew">
+            <Loader2 v-if="creating" class="w-4 h-4 mr-2 animate-spin" />
+            Navbatga qo'shish
           </Button>
         </DialogFooter>
       </DialogContent>
