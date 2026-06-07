@@ -115,14 +115,9 @@ const roomTotal = computed(() => {
   return nightsSoFar(displayGuest.value) * displayGuest.value.nightly_rate_locked_minor_units
 })
 
-const serviceTotal = computed(() => {
-  // Bill includes all open orders (received/preparing/delivering) plus delivered.
-  // Only cancelled orders are excluded — once a kitchen starts cooking the guest pays.
-  return orders.value.reduce(
-    (s, o) => s + (o.status === 'cancelled' ? 0 : o.total_minor_units),
-    0,
-  )
-})
+const serviceTotal = computed(() =>
+  orders.value.reduce((s, o) => s + o.total_minor_units, 0),
+)
 
 const grandTotal = computed(() => roomTotal.value + serviceTotal.value)
 </script>
@@ -236,7 +231,7 @@ const grandTotal = computed(() => roomTotal.value + serviceTotal.value)
               <span class="font-mono tabular-nums">{{ money(roomTotal) }}</span>
             </div>
             <div class="flex justify-between text-sm">
-              <span class="flex items-center gap-1"><UtensilsCrossed class="w-3.5 h-3.5" /> Xona xizmati ({{ orders.filter(o => o.status !== 'cancelled').length }})</span>
+              <span class="flex items-center gap-1"><UtensilsCrossed class="w-3.5 h-3.5" /> Xona xizmati ({{ orders.length }})</span>
               <span class="font-mono tabular-nums">{{ money(serviceTotal) }}</span>
             </div>
             <Separator />
