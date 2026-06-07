@@ -224,7 +224,9 @@ const counts = computed(() => {
 
 onMounted(() => {
   rooms.load()
-  maintenance.load(auth.role || undefined)
+  if (auth.role !== 'kitchen' && auth.role !== 'cleaner') {
+    maintenance.load(auth.role || undefined)
+  }
 })
 
 watch(

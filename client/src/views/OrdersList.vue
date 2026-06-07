@@ -81,7 +81,7 @@ async function loadHistory() {
   finally { historyLoading.value = false }
 }
 
-const canWork = computed(() => auth.role === 'manager' || auth.role === 'reception')
+const canWork = computed(() => auth.role === 'manager' || auth.role === 'reception' || auth.role === 'kitchen')
 const isManager = computed(() => auth.role === 'manager')
 
 const NEXT: Record<OrderStatus, OrderStatus | null> = {

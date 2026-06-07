@@ -27,6 +27,7 @@ ALL_AUTHENTICATED = (
     UserRole.RECEPTION,
     UserRole.TECHNICIAN,
     UserRole.CLEANER,
+    UserRole.KITCHEN,
 )
 MANAGER_ONLY = (UserRole.MANAGER,)
 
