@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
 from src.api.dependencies import GuestContextDep, PublisherDep, SessionDep
 from src.api.schemas.guest_portal import (
@@ -226,3 +227,41 @@ async def create_guest_cleaning(
         preferred_time=payload.preferred_time, note=payload.note,
         status="pending", requested_at=requested_at,
     )
+
+
+class CleaningPreferenceUpdate(BaseModel):
+    cleaning_preference: str
+    cleaning_preference_note: str | None = None
+
+
+@router.put("/cleaning-preference")
+async def update_cleaning_preference(
+    payload: CleaningPreferenceUpdate,
+    session: SessionDep,
+    publisher: PublisherDep,
+    guest: GuestContextDep,
+) -> dict:
+    """Guest updates their cleaning time preference."""
+    from pydantic import BaseModel as _  # noqa: already imported above
+
+    guest_uuid = uuid.UUID(guest.guest_id)
+    guest_record = await GuestRepository(session).get(guest_uuid)
+    if guest_record is None or guest_record.checked_out_at is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not checked in")
+
+    guest_record.cleaning_preference = payload.cleaning_preference
+    guest_record.cleaning_preference_note = payload.cleaning_preference_note
+    await session.commit()
+
+    await publisher.publish(
+        channel=Channels.GUEST_PREFERENCES_CHANGED,
+        payload={
+            "guest_id": guest.guest_id,
+            "room_id": guest.room_id,
+            "room_number": guest.room_number,
+            "cleaning_preference": payload.cleaning_preference,
+            "cleaning_preference_note": payload.cleaning_preference_note,
+        },
+    )
+
+    return {"cleaning_preference": payload.cleaning_preference}

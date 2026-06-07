@@ -26,19 +26,25 @@ const auth = useAuthStore()
 const toast = useToastStore()
 const router = useRouter()
 
-onMounted(() => guests.load())
+const checkInOpen = ref(false)
+const searchQuery = ref('')
+const filterFloor = ref('all')
+const filterStatus = ref('active') // 'active' | 'checked_out' | 'all'
+const filterDate = ref('') // yyyy-mm-dd format or empty
+
+onMounted(() => guests.load(filterStatus.value === 'active' ? undefined : filterStatus.value as any))
+
+watch(filterStatus, (val) => {
+  guests.load(val === 'active' ? undefined : val as any)
+})
 
 watch(
   () => ws.lastEvent,
   (env) => {
     const ch = env?.channel ?? ''
-    if (ch.startsWith('guests.') || ch.startsWith('bills.')) guests.load()
+    if (ch.startsWith('guests.') || ch.startsWith('bills.')) guests.load(filterStatus.value === 'active' ? undefined : filterStatus.value as any)
   }
 )
-
-const checkInOpen = ref(false)
-const searchQuery = ref('')
-const filterFloor = ref('all')
 
 // Checkout modal
 const checkoutGuest = ref<Guest | null>(null)
@@ -64,6 +70,13 @@ const filteredGuests = computed(() => {
   }
   if (filterFloor.value !== 'all') {
     list = list.filter(g => String(g.floor) === filterFloor.value)
+  }
+  if (filterDate.value) {
+    list = list.filter(g => {
+      const checkedIn = g.checked_in_at.slice(0, 10)
+      const checkedOut = g.checked_out_at ? g.checked_out_at.slice(0, 10) : null
+      return checkedIn === filterDate.value || checkedOut === filterDate.value
+    })
   }
   return list
 })
@@ -176,6 +189,16 @@ async function doDelete() {
               class="pl-9 w-[240px]"
             />
           </div>
+          <Select v-model="filterStatus">
+            <SelectTrigger class="w-[160px]">
+              <SelectValue placeholder="Holat" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Faol mehmonlar</SelectItem>
+              <SelectItem value="checked_out">Ketganlar</SelectItem>
+              <SelectItem value="all">Hammasi</SelectItem>
+            </SelectContent>
+          </Select>
           <Select v-model="filterFloor">
             <SelectTrigger class="w-[140px]">
               <SelectValue placeholder="Qavat" />
@@ -185,6 +208,12 @@ async function doDelete() {
               <SelectItem v-for="f in floors" :key="f" :value="String(f)">{{ f }}-qavat</SelectItem>
             </SelectContent>
           </Select>
+          <Input
+            v-model="filterDate"
+            type="date"
+            class="w-[160px]"
+            placeholder="Sana"
+          />
         </div>
         <Button size="sm" @click="checkInOpen = true">
           <UserPlus class="w-4 h-4 mr-1" />
@@ -221,6 +250,7 @@ async function doDelete() {
         <TableHeader>
           <TableRow>
             <TableHead>Mehmon</TableHead>
+            <TableHead>Holat</TableHead>
             <TableHead>Telefon</TableHead>
             <TableHead>Xona</TableHead>
             <TableHead>Qabul qilindi</TableHead>
@@ -246,6 +276,10 @@ async function doDelete() {
                 </Avatar>
                 <span class="font-medium">{{ g.full_name }}</span>
               </div>
+            </TableCell>
+            <TableCell>
+              <Badge v-if="!g.checked_out_at" variant="success" class="text-[10px]">Faol</Badge>
+              <Badge v-else variant="secondary" class="text-[10px]">Ketgan</Badge>
             </TableCell>
             <TableCell class="text-muted-foreground font-mono text-xs">{{ g.phone }}</TableCell>
             <TableCell class="font-mono">

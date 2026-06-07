@@ -5,9 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { receptionApi, type Guest, type GuestHistory, type Order, type Bill } from '@/api/reception'
+import { receptionApi, type Guest, type GuestHistory, type Order, type Bill, type CleaningPreference } from '@/api/reception'
 import { useToastStore } from '@/stores/toast'
 import { useWsStore } from '@/stores/ws'
 import { useAuthStore } from '@/stores/auth'
@@ -50,6 +51,22 @@ const canCheckOut = computed(() => auth.role === 'manager' || auth.role === 'rec
 
 const PREF_UZ: Record<string, string> = { morning: 'Ertalab', afternoon: 'Tushdan keyin', evening: 'Kechqurun', custom: 'Maxsus' }
 const STATUS_UZ: Record<string, string> = { received: 'Qabul qilindi', preparing: 'Tayyorlanmoqda', delivering: 'Yetkazilmoqda', delivered: 'Yetkazildi' }
+
+const savingPref = ref(false)
+
+async function updateCleaningPreference(pref: string) {
+  if (!guest.value) return
+  savingPref.value = true
+  try {
+    const updated = await receptionApi.setCleaningPreference(guest.value.id, pref as CleaningPreference)
+    guest.value.cleaning_preference = updated.cleaning_preference
+    toast.success('Tozalash vaqti o\'zgartirildi')
+  } catch {
+    toast.error('O\'zgartirishda xatolik')
+  } finally {
+    savingPref.value = false
+  }
+}
 
 function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
 function nightsSoFar(g: Guest) { return Math.max(1, Math.ceil((Date.now() - new Date(g.checked_in_at).getTime()) / 86400000)) }
@@ -197,8 +214,22 @@ watch(() => ws.lastEvent, (env) => {
                 <div class="flex items-center gap-2">
                   <Sparkles class="w-4 h-4 text-muted-foreground shrink-0" />
                   <div>
-                    <p class="text-xs text-muted-foreground">Tozalash</p>
-                    <p class="text-sm font-medium">{{ PREF_UZ[guest.cleaning_preference] || guest.cleaning_preference }}</p>
+                    <p class="text-xs text-muted-foreground">Tozalash vaqti</p>
+                    <Select
+                      :model-value="guest.cleaning_preference"
+                      :disabled="savingPref"
+                      @update:model-value="updateCleaningPreference"
+                    >
+                      <SelectTrigger class="h-7 w-[140px] text-xs mt-0.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="morning">Ertalab</SelectItem>
+                        <SelectItem value="afternoon">Tushdan keyin</SelectItem>
+                        <SelectItem value="evening">Kechqurun</SelectItem>
+                        <SelectItem value="custom">Maxsus</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </div>

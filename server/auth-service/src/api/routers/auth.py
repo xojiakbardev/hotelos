@@ -82,7 +82,7 @@ async def change_password(
     token = create_access_token(
         user_id=str(user.id),
         phone=user.phone,
-        role=user.role.value,
+        role=user.role.value if hasattr(user.role, 'value') else str(user.role),
         guest_id=str(user.guest_id) if user.guest_id else None,
         room_id=str(user.room_id) if user.room_id else None,
         room_number=user.room_number,

@@ -76,8 +76,16 @@ async def daily_guest_stats(
 async def list_active_guests(
     session: SessionDep,
     _=Depends(require_role(*CAN_CHECK_IN)),
+    status: str | None = None,
 ) -> list[GuestOut]:
-    guests = await GuestRepository(session).list_active()
+    repo = GuestRepository(session)
+    if status == 'checked_out':
+        all_guests = await repo.list_all(limit=200)
+        guests = [g for g in all_guests if g.checked_out_at is not None]
+    elif status == 'all':
+        guests = await repo.list_all(limit=200)
+    else:
+        guests = await repo.list_active()
     return [
         GuestOut(
             id=str(g.id),
@@ -88,6 +96,7 @@ async def list_active_guests(
             floor=g.room.floor,
             room_type=g.room.room_type,
             checked_in_at=g.checked_in_at,
+            checked_out_at=g.checked_out_at,
             expected_checkout_at=g.expected_checkout_at,
             nightly_rate_locked_minor_units=g.nightly_rate_locked_minor_units,
             do_not_disturb=g.do_not_disturb,

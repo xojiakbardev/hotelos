@@ -10,11 +10,11 @@ interface State {
 export const useGuestsStore = defineStore('guests', {
   state: (): State => ({ guests: [], loading: false, error: null }),
   actions: {
-    async load() {
+    async load(status?: 'all' | 'checked_out') {
       this.loading = true
       this.error = null
       try {
-        this.guests = await receptionApi.listGuests()
+        this.guests = await receptionApi.listGuests(status)
       } catch (e: unknown) {
         const err = e as { response?: { status?: number; data?: { message?: string } }; message?: string }
         if (err.response?.status === 403) {

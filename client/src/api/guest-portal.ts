@@ -75,4 +75,12 @@ export const guestPortalApi = {
     api
       .post<GuestCleaning>('/reception/guest-portal/cleaning', data)
       .then((r) => r.data),
+
+  updateCleaningPreference: (preference: string, note?: string | null) =>
+    api
+      .put('/reception/guest-portal/cleaning-preference', {
+        cleaning_preference: preference,
+        cleaning_preference_note: note ?? null,
+      })
+      .then((r) => r.data),
 }

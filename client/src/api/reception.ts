@@ -44,6 +44,7 @@ export interface Guest {
   floor: number
   room_type: RoomType
   checked_in_at: string
+  checked_out_at: string | null
   expected_checkout_at: string
   nightly_rate_locked_minor_units: number
   do_not_disturb: boolean
@@ -153,7 +154,8 @@ export const receptionApi = {
     api.put<Room>(`/reception/rooms/${id}`, payload).then((r) => r.data),
   deleteRoom: (id: string, confirm = false) =>
     api.delete(`/reception/rooms/${id}`, { params: confirm ? { confirm: true } : undefined }).then(() => undefined),
-  listGuests: () => api.get<Guest[]>('/reception/guests').then((r) => r.data),
+  listGuests: (status?: 'all' | 'checked_out') =>
+    api.get<Guest[]>('/reception/guests', { params: status ? { status } : undefined }).then((r) => r.data),
   dailyGuestStats: (days = 30) =>
     api
       .get<DailyCount[]>('/reception/guests/stats/daily', { params: { days } })

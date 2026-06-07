@@ -34,6 +34,16 @@ class GuestRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_all(self, limit: int = 100) -> list[Guest]:
+        """All guests (active + checked out), most recent first."""
+        stmt = (
+            select(Guest)
+            .options(selectinload(Guest.room))
+            .order_by(Guest.checked_in_at.desc())
+            .limit(limit)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def daily_checkin_counts(self, days: int = 30) -> list[tuple[date, int]]:
         """Return [(day, count), …] for the last `days` calendar days, with
         zero rows included for empty days.

@@ -108,6 +108,7 @@ class GuestOut(BaseModel):
     floor: int
     room_type: RoomType
     checked_in_at: datetime
+    checked_out_at: datetime | None = None
     expected_checkout_at: datetime
     nightly_rate_locked_minor_units: int
     do_not_disturb: bool = False

@@ -100,6 +100,16 @@ const totalOrdersCost = computed(() => store.orders.reduce((s, o) => s + o.total
 
 const CATEGORY_UZ: Record<string, string> = { drinks: 'Ichimliklar', food: 'Ovqatlar', dessert: 'Shirinliklar', snacks: 'Gazaklar', other: 'Boshqa' }
 
+// Cleaning preference
+const cleaningPref = ref('afternoon')
+
+async function updatePref(val: string) {
+  cleaningPref.value = val
+  try {
+    await guestPortalApi.updateCleaningPreference(val)
+  } catch { /* ignore */ }
+}
+
 function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
 
 function statusVariant(s: string): 'default' | 'success' | 'warning' | 'secondary' {
@@ -396,6 +406,28 @@ async function submitCleaning() {
                   <p class="text-sm text-muted-foreground">Xona #{{ store.roomNumber }} · {{ store.floor }}-qavat</p>
                 </div>
               </div>
+              <Separator />
+
+              <!-- Cleaning preference -->
+              <div class="space-y-2">
+                <p class="text-xs font-semibold uppercase text-muted-foreground">Tozalash vaqti</p>
+                <Select
+                  :model-value="cleaningPref"
+                  @update:model-value="updatePref"
+                >
+                  <SelectTrigger class="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="morning">Ertalab (08:00–12:00)</SelectItem>
+                    <SelectItem value="afternoon">Tushdan keyin (12:00–17:00)</SelectItem>
+                    <SelectItem value="evening">Kechqurun (17:00–21:00)</SelectItem>
+                    <SelectItem value="custom">Maxsus vaqt</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p class="text-xs text-muted-foreground">Xonangiz qachon tozalanishini tanlang</p>
+              </div>
+
               <Separator />
               <div class="space-y-2">
                 <p class="text-xs font-semibold uppercase text-muted-foreground">Hisob-kitob</p>
