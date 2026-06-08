@@ -17,7 +17,7 @@ import {
 import { reservationsApi, type Reservation } from '@/api/reservations'
 import { useToastStore } from '@/stores/toast'
 import { parseApiError } from '@/composables/useOptimistic'
-import { Loader2, Copy, Check as CheckIcon, CalendarCheck } from 'lucide-vue-next'
+import { Loader2, Copy, Check as CheckIcon, CalendarCheck, Sparkles } from 'lucide-vue-next'
 
 const props = defineProps<{ room?: Room | null }>()
 const emit = defineEmits<{ success: [guest: Guest]; cancel: [] }>()
@@ -78,6 +78,36 @@ watch(selectedReservationId, (id) => {
 function clearReservation() {
   selectedReservationId.value = ''
 }
+
+// Returning-guest lookup: if the phone matches a past guest, pull their
+// name from history so reception doesn't retype it. Debounced to avoid
+// hitting the API on every keystroke.
+const PHONE_REGEX = /^\+?[1-9]\d{9,14}$/
+const lookupHistory = ref<{ full_name: string; total_stays: number; repeat_visitor: boolean } | null>(null)
+const lookingUp = ref(false)
+let lookupTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(() => form.value.phone, (phone) => {
+  lookupHistory.value = null
+  if (lookupTimer) clearTimeout(lookupTimer)
+  // Skip if reservation already filled the form, or phone is invalid.
+  if (selectedReservationId.value) return
+  const cleaned = phone.trim()
+  if (!PHONE_REGEX.test(cleaned)) return
+  lookupTimer = setTimeout(async () => {
+    lookingUp.value = true
+    try {
+      const h = await receptionApi.guestHistory(cleaned)
+      if (h && h.total_stays > 0) {
+        lookupHistory.value = { full_name: h.full_name, total_stays: h.total_stays, repeat_visitor: h.repeat_visitor }
+        // Only auto-fill name if the field is empty — never overwrite
+        // what the user has already typed.
+        if (!form.value.full_name.trim()) form.value.full_name = h.full_name
+      }
+    } catch { /* no prior stays — silent */ }
+    finally { lookingUp.value = false }
+  }, 400)
+})
 
 function money(minor: number) { return (minor / 100).toLocaleString('uz-UZ') + " so'm" }
 
@@ -221,9 +251,18 @@ async function submit() {
           <Input v-model="form.full_name" required />
         </div>
         <div class="space-y-1.5">
-          <Label>Telefon</Label>
+          <Label class="flex items-center gap-1.5">
+            Telefon
+            <Loader2 v-if="lookingUp" class="w-3 h-3 animate-spin text-muted-foreground" />
+          </Label>
           <Input v-model="form.phone" type="tel" placeholder="+998901234567" required />
         </div>
+      </div>
+      <div v-if="lookupHistory" class="flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/15 rounded-md px-3 py-2">
+        <Sparkles class="w-3.5 h-3.5 shrink-0" />
+        <span>
+          <strong>{{ lookupHistory.full_name }}</strong> — {{ lookupHistory.total_stays }} marta yashagan{{ lookupHistory.repeat_visitor ? ' (doimiy)' : '' }}. Ism avtomatik to'ldirildi.
+        </span>
       </div>
       <div class="space-y-1.5">
         <Label>Pasport (ixtiyoriy)</Label>

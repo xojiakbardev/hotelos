@@ -79,6 +79,17 @@ class DNDRequest(BaseModel):
     do_not_disturb: bool
 
 
+class GuestUpdateRequest(BaseModel):
+    """Body for `PUT /guests/{id}` — edit identity fields and expected
+    check-out. Locked-rate, room assignment, and check-in time are not
+    editable here (they belong to the check-in flow)."""
+
+    full_name: str | None = Field(default=None, min_length=2, max_length=120)
+    phone: str | None = Field(default=None, pattern=PHONE_REGEX)
+    passport_number: str | None = Field(default=None, max_length=40)
+    expected_checkout_at: datetime | None = None
+
+
 class CleaningPreferenceRequest(BaseModel):
     """Body for `PUT /guests/{id}/cleaning-preference`."""
 

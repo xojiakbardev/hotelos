@@ -169,6 +169,16 @@ export const receptionApi = {
     api
       .get<GuestHistory>(`/reception/guests/history/by-phone/${encodeURIComponent(phone)}`)
       .then((r) => r.data),
+  updateGuest: (
+    guestId: string,
+    payload: Partial<{
+      full_name: string
+      phone: string
+      passport_number: string | null
+      expected_checkout_at: string
+    }>
+  ) =>
+    api.put<Guest>(`/reception/guests/${guestId}`, payload).then((r) => r.data),
   setDnd: (guestId: string, value: boolean) =>
     api
       .put<Guest>(`/reception/guests/${guestId}/dnd`, { do_not_disturb: value })

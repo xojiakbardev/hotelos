@@ -32,6 +32,7 @@ from src.api.schemas.guest import (
     DNDRequest,
     GuestHistoryOut,
     GuestOut,
+    GuestUpdateRequest,
     StaySummary,
 )
 from src.domain.enums import Cleanliness, RoomStatus, UserRole
@@ -326,6 +327,72 @@ async def check_in(
         guest_pin=guest_pin,
         guest_login=payload.phone,
     )
+
+
+@router.put("/{guest_id}", response_model=GuestOut)
+async def update_guest(
+    guest_id: uuid.UUID,
+    payload: GuestUpdateRequest,
+    session: SessionDep,
+    publisher: PublisherDep,
+    _=Depends(require_role(*CAN_CHECK_IN)),
+) -> GuestOut:
+    """Edit a still-checked-in guest's identity fields and expected
+    check-out date. Room, locked rate, and check-in time are immutable
+    here — those belong to the check-in flow."""
+    repo = GuestRepository(session)
+    async with session.begin():
+        guest = await repo.get(guest_id)
+        if guest is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="guest not found")
+        if guest.checked_out_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "not_checked_in", "message": "guest already checked out"},
+            )
+
+        new_checkout = payload.expected_checkout_at
+        if new_checkout is not None and new_checkout <= guest.checked_in_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="expected_checkout_at must be after checked_in_at",
+            )
+
+        await repo.update_fields(
+            guest,
+            full_name=payload.full_name,
+            phone=payload.phone,
+            passport_number=payload.passport_number,
+            expected_checkout_at=new_checkout,
+        )
+        snapshot = GuestOut(
+            id=str(guest.id),
+            full_name=guest.full_name,
+            phone=guest.phone,
+            room_id=str(guest.room_id),
+            room_number=guest.room.room_number,
+            floor=guest.room.floor,
+            room_type=guest.room.room_type,
+            checked_in_at=guest.checked_in_at,
+            expected_checkout_at=guest.expected_checkout_at,
+            nightly_rate_locked_minor_units=guest.nightly_rate_locked_minor_units,
+            do_not_disturb=guest.do_not_disturb,
+            cleaning_preference=guest.cleaning_preference,
+            cleaning_preference_note=guest.cleaning_preference_note,
+        )
+
+    await publisher.publish(
+        channel=Channels.GUEST_UPDATED,
+        payload={
+            "guest_id": snapshot.id,
+            "room_id": snapshot.room_id,
+            "room_number": snapshot.room_number,
+            "full_name": snapshot.full_name,
+            "phone": snapshot.phone,
+            "expected_checkout_at": snapshot.expected_checkout_at.isoformat(),
+        },
+    )
+    return snapshot
 
 
 @router.put("/{guest_id}/dnd", response_model=GuestOut)

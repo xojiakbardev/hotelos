@@ -15,6 +15,7 @@ class Channels:
     GUEST_CHECKED_OUT = "guests.checked_out"
     GUEST_DND_CHANGED = "guests.dnd_changed"
     GUEST_PREFERENCES_CHANGED = "guests.preferences_changed"
+    GUEST_UPDATED = "guests.updated"
     GUEST_CREDENTIAL_CREATED = "guests.credential_created"
     GUEST_CREDENTIAL_DEACTIVATED = "guests.credential_deactivated"
     GUEST_CREDENTIAL_UPDATED = "guests.credential_updated"

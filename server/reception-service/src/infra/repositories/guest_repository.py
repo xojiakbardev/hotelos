@@ -100,6 +100,25 @@ class GuestRepository:
         await self.session.flush()
         return guest
 
+    async def update_fields(
+        self,
+        guest: Guest,
+        *,
+        full_name: str | None = None,
+        phone: str | None = None,
+        passport_number: str | None = None,
+        expected_checkout_at: datetime | None = None,
+    ) -> None:
+        if full_name is not None:
+            guest.full_name = full_name
+        if phone is not None:
+            guest.phone = phone
+        if passport_number is not None:
+            guest.passport_number = passport_number
+        if expected_checkout_at is not None:
+            guest.expected_checkout_at = expected_checkout_at
+        await self.session.flush()
+
     async def set_dnd(self, guest: Guest, value: bool) -> None:
         guest.do_not_disturb = value
         await self.session.flush()

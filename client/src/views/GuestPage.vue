@@ -8,6 +8,8 @@ import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { receptionApi, type Guest, type GuestHistory, type Order, type Bill, type CleaningPreference } from '@/api/reception'
 import { useToastStore } from '@/stores/toast'
 import { useWsStore } from '@/stores/ws'
@@ -28,6 +30,7 @@ import {
   Loader2,
   ArrowLeft,
   CheckCircle,
+  Pencil,
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -46,6 +49,40 @@ const newPin = ref<string | null>(null)
 const checkoutOpen = ref(false)
 const checkingOut = ref(false)
 const checkoutBill = ref<Bill | null>(null)
+
+const editOpen = ref(false)
+const editing = ref(false)
+const editForm = ref({ full_name: '', phone: '', expected_checkout_at: '' })
+
+function openEdit() {
+  if (!guest.value) return
+  editForm.value = {
+    full_name: guest.value.full_name,
+    phone: guest.value.phone,
+    // <input type="datetime-local"> needs YYYY-MM-DDTHH:MM (no TZ).
+    expected_checkout_at: new Date(guest.value.expected_checkout_at).toISOString().slice(0, 16),
+  }
+  editOpen.value = true
+}
+
+async function saveEdit() {
+  if (!guest.value) return
+  editing.value = true
+  try {
+    const updated = await receptionApi.updateGuest(guest.value.id, {
+      full_name: editForm.value.full_name.trim(),
+      phone: editForm.value.phone.trim(),
+      expected_checkout_at: new Date(editForm.value.expected_checkout_at).toISOString(),
+    })
+    guest.value = { ...guest.value, ...updated }
+    toast.success('Saqlandi')
+    editOpen.value = false
+  } catch (e: any) {
+    toast.error(e?.response?.data?.detail?.message || e?.response?.data?.detail || 'Saqlashda xatolik')
+  } finally {
+    editing.value = false
+  }
+}
 
 const canCheckOut = computed(() => auth.role === 'manager' || auth.role === 'reception')
 
@@ -156,7 +193,18 @@ watch(() => ws.lastEvent, (env) => {
       <!-- Header -->
       <div class="flex items-start justify-between">
         <div>
-          <h1 class="text-2xl font-bold tracking-tight">{{ guest.full_name }}</h1>
+          <div class="flex items-center gap-2">
+            <h1 class="text-2xl font-bold tracking-tight">{{ guest.full_name }}</h1>
+            <Button
+              v-if="canCheckOut && !guest.checked_out_at"
+              variant="ghost"
+              size="xs"
+              @click="openEdit"
+              title="Tahrirlash"
+            >
+              <Pencil class="w-3.5 h-3.5" />
+            </Button>
+          </div>
           <div class="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
             <span class="flex items-center gap-1"><Phone class="w-3.5 h-3.5" /> {{ guest.phone }}</span>
             <span class="flex items-center gap-1"><BedDouble class="w-3.5 h-3.5" /> #{{ guest.room_number }} · {{ guest.floor }}q</span>
@@ -403,6 +451,37 @@ watch(() => ws.lastEvent, (env) => {
             </Button>
           </div>
         </div>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Edit guest dialog -->
+    <Dialog v-model:open="editOpen">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Mehmonni tahrirlash</DialogTitle>
+          <DialogDescription class="sr-only">Mehmon ma'lumotlarini yangilang</DialogDescription>
+        </DialogHeader>
+        <form class="space-y-4" @submit.prevent="saveEdit">
+          <div class="space-y-1.5">
+            <Label for="edit-name">F.I.Sh.</Label>
+            <Input id="edit-name" v-model="editForm.full_name" required minlength="2" maxlength="120" />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="edit-phone">Telefon</Label>
+            <Input id="edit-phone" v-model="editForm.phone" required placeholder="+998901234567" />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="edit-checkout">Chiqishi kerak</Label>
+            <Input id="edit-checkout" v-model="editForm.expected_checkout_at" type="datetime-local" required />
+          </div>
+          <div class="flex gap-3 pt-2">
+            <Button type="button" variant="outline" class="flex-1" @click="editOpen = false">Bekor</Button>
+            <Button type="submit" class="flex-1" :disabled="editing">
+              <Loader2 v-if="editing" class="w-4 h-4 mr-2 animate-spin" />
+              Saqlash
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   </div>
